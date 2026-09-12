@@ -1,7 +1,7 @@
 #!/bin/bash
-# ─── CENTRALIZED UI & OPERATIONAL LIBRARY (WARSTICK COMMAND CONSOLE) ───
+#  CENTRALIZED UI & OPERATIONAL LIBRARY (WARSTICK COMMAND CONSOLE)
 
-# ─── MIAMI VICE / VAPORWAVE ANSI COLOR CODES ────────────────────
+#  MIAMI VICE / VAPORWAVE ANSI COLOR CODES
 export NEON_PINK="\033[38;5;213m"
 export PINK="\033[38;5;205m"     # Neon Magenta / Sunset Pink
 export ORANGE="\033[38;5;214m"   # Sunset Orange
@@ -16,7 +16,7 @@ export RED="\033[38;5;196m"      # Bright Red
 export BOLD="\033[1m"
 export RESET="\033[0m"
 
-# ─── BANNER RENDERER ────────────────────────────────────────────
+#  BANNER RENDERER 
 draw_banner() {
     clear
     local BANNER_FILE="$USB_ROOT/agent/banner.txt"
@@ -47,7 +47,7 @@ draw_banner() {
     echo -e "${RESET}"
 }
 
-# ─── LOAD CENTRAL PHRASES ───────────────────────────────────────
+# LOAD CENTRAL PHRASES
 get_phrases() {
     local PHRASES_FILE="$USB_ROOT/agent/phrases.txt"
     if [ -f "$PHRASES_FILE" ]; then
@@ -68,7 +68,7 @@ get_phrases() {
     fi
 }
 
-# ─── ACTIVE MODEL MANAGEMENT ─────────────────────────────────────
+# ACTIVE MODEL MANAGEMENT
 get_active_model() {
     local MODEL_CONF="$USB_ROOT/agent/active_model.txt"
     local SELECTED_MODEL=""
@@ -110,7 +110,7 @@ select_model_menu() {
     done
 
     if [ ${#MODELS[@]} -eq 0 ]; then
-        echo -e "${RED}[!] No .gguf models discovered inside USB /models directory.${RESET}"
+        echo -e "${RED}[!] No .gguf models discovered inside /models directory.${RESET}"
         echo -n "Press [Enter] to return..."
         read
         return
@@ -131,7 +131,7 @@ select_model_menu() {
     fi
 }
 
-# ─── CUSTOM SKILL / TOOL REGISTRY MANAGEMENT ─────────────────────
+# CUSTOM SKILL / TOOL REGISTRY MANAGEMENT
 get_skills_manifest() {
     local SKILLS_DIR="$USB_ROOT/agent/skills"
     local MANIFEST=""
@@ -379,7 +379,7 @@ EOF
     done
 }
 
-# ─── ENGINE LIFECYCLE CONTROLLERS ────────────────────────────────
+# ─── ENGINE LIFECYCLE CONTROLLERS
 wait_for_server() {
     local PORT=${1:-9931}
     local MAX_WAIT=${2:-30}
@@ -411,10 +411,59 @@ stop_engine() {
     sleep 0.5
 }
 
+# Ensure Linux shared objects are real files (FAT/exFAT USB copies drop symlinks).
+ensure_linux_runtime_libs() {
+    local BIN_DIR="$1"
+    local REAL_CPU=""
+    local candidate
+
+    [ -d "$BIN_DIR" ] || return 1
+
+    for candidate in \
+        "$BIN_DIR/libggml-cpu.so.0.23.0" \
+        "$BIN_DIR/libggml-cpu.so.0" \
+        "$BIN_DIR/libggml-cpu.so"
+    do
+        if [ -f "$candidate" ] && [ ! -L "$candidate" ]; then
+            REAL_CPU="$candidate"
+            break
+        fi
+    done
+
+    if [ -z "$REAL_CPU" ]; then
+        echo -e "${RED}[!] Missing Linux CPU backend library in $BIN_DIR${RESET}"
+        echo -e "${ORANGE}    Expected one of: libggml-cpu.so.0.23.0, libggml-cpu.so.0, libggml-cpu.so${RESET}"
+        return 1
+    fi
+
+    # Materialize SONAME aliases as hard copies so noexec/FAT USB media still works.
+    for candidate in \
+        "$BIN_DIR/libggml-cpu.so.0" \
+        "$BIN_DIR/libggml-cpu.so"
+    do
+        if [ ! -f "$candidate" ] || [ -L "$candidate" ]; then
+            cp -f "$REAL_CPU" "$candidate" 2>/dev/null || true
+        fi
+    done
+
+    # Best-effort execute bits (ignored on some FAT mounts).
+    chmod +x "$BIN_DIR/llama-server" "$BIN_DIR"/*.so* 2>/dev/null || true
+    return 0
+}
+
 start_engine() {
     local OS_TYPE="$1" # mac or linux
-    local ACTIVE_MODEL=$(get_active_model)
-    local MODEL_PATH="$USB_ROOT/models/$ACTIVE_MODEL"
+    local ACTIVE_MODEL
+    local MODEL_PATH
+    local BIN_DIR
+    local SERVER_BIN
+    local SERVER_LOG
+    local LAUNCH_ENV=()
+
+    ACTIVE_MODEL=$(get_active_model)
+    MODEL_PATH="$USB_ROOT/models/$ACTIVE_MODEL"
+    SERVER_LOG="$USB_ROOT/agent/logs/llama-server.log"
+    mkdir -p "$USB_ROOT/agent/logs"
 
     if [ ! -f "$MODEL_PATH" ]; then
         echo -e "${RED}[!] Error: Model not found: $MODEL_PATH${RESET}"
@@ -422,19 +471,59 @@ start_engine() {
     fi
 
     stop_engine
+    : > "$SERVER_LOG"
 
     if [ "$OS_TYPE" == "mac" ]; then
-        xattr -cr "$USB_ROOT/bin/mac-arm64" 2>/dev/null
-        chmod +x "$USB_ROOT/bin/mac-arm64/llama-server" 2>/dev/null
-        "$USB_ROOT/bin/mac-arm64/llama-server" -m "$MODEL_PATH" -c 4096 --host 0.0.0.0 --port 9931 --path "$USB_ROOT/agent/webui" > /dev/null 2>&1 &
-        SERVER_PID=$!
+        BIN_DIR="$USB_ROOT/bin/mac-arm64"
+        SERVER_BIN="$BIN_DIR/llama-server"
+        xattr -cr "$BIN_DIR" 2>/dev/null
+        chmod +x "$SERVER_BIN" 2>/dev/null
     else
-        chmod +x "$USB_ROOT/bin/linux-x64/llama-server" 2>/dev/null
-        "$USB_ROOT/bin/linux-x64/llama-server" -m "$MODEL_PATH" -c 4096 --host 0.0.0.0 --port 9931 --path "$USB_ROOT/agent/webui" > /dev/null 2>&1 &
-        SERVER_PID=$!
+        BIN_DIR="$USB_ROOT/bin/linux-x64"
+        SERVER_BIN="$BIN_DIR/llama-server"
+
+        if ! ensure_linux_runtime_libs "$BIN_DIR"; then
+            return 1
+        fi
+
+        if [ ! -f "$SERVER_BIN" ]; then
+            echo -e "${RED}[!] Missing Linux engine binary: $SERVER_BIN${RESET}"
+            return 1
+        fi
+
+        # Force local bundled libs first. Critical when copied to USB and when
+        # ELF RUNPATH was previously baked to a build temp path.
+        export LD_LIBRARY_PATH="$BIN_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        LAUNCH_ENV=(env "LD_LIBRARY_PATH=$LD_LIBRARY_PATH")
     fi
 
-    wait_for_server 9931 35
+    if [ ! -x "$SERVER_BIN" ] && [ ! -f "$SERVER_BIN" ]; then
+        echo -e "${RED}[!] Engine binary not executable: $SERVER_BIN${RESET}"
+        return 1
+    fi
+
+    # Keep stderr so USB/noexec/missing-lib failures are diagnosable.
+    "${LAUNCH_ENV[@]}" "$SERVER_BIN" \
+        -m "$MODEL_PATH" \
+        -c 4096 \
+        --host 0.0.0.0 \
+        --port 9931 \
+        --path "$USB_ROOT/agent/webui" \
+        >"$SERVER_LOG" 2>&1 &
+    SERVER_PID=$!
+
+    if ! wait_for_server 9931 35; then
+        echo -e "${RED}[!] Neural engine failed to become ready on port 9931.${RESET}"
+        if [ -s "$SERVER_LOG" ]; then
+            echo -e "${ORANGE}─── last engine log lines ─────────────────────────────${RESET}"
+            tail -n 20 "$SERVER_LOG" 2>/dev/null
+            echo -e "${ORANGE}───────────────────────────────────────────────────────${RESET}"
+            echo -e "${CYAN}Full log: $SERVER_LOG${RESET}"
+        else
+            echo -e "${ORANGE}[!] No engine log written. Check USB mount options (noexec) and library copy.${RESET}"
+        fi
+        return 1
+    fi
 }
 
 restart_engine() {
@@ -445,7 +534,7 @@ restart_engine() {
     start_engine "$OS_NAME"
 }
 
-# ─── REAL-TIME ASYNC SPINNER & REQUEST RUNNER ───────────────────
+# REAL-TIME ASYNC SPINNER & REQUEST RUNNER
 query_llm_with_live_animation() {
     local PAYLOAD="$1"
     mkdir -p "$USB_ROOT/agent/logs"
@@ -511,7 +600,7 @@ query_llm_with_live_animation() {
     fi
 }
 
-# ─── GENERATED COMMAND VALIDATION ──────────────────────────────
+#  GENERATED COMMAND VALIDATION
 validate_shell_command() {
     local command_text="$1"
 
@@ -523,7 +612,7 @@ validate_shell_command() {
     bash -n -c "$command_text" >/dev/null 2>&1
 }
 
-# ─── RESPONSE JSON PARSER & REFUSAL DETECTOR ───────────────────
+#  RESPONSE JSON PARSER & REFUSAL DETECTOR
 clean_json_command() {
     local raw_input="$1"
     local content=""
