@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090b0c">
+  <title>WarStick Command Console</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #090b0c;
+      --panel: #101416;
+      --panel-strong: #161b1e;
+      --line: #344047;
+      --text: #f2eee2;
+      --muted: #8d999f;
+      --pink: #ff5fd7;
+      --violet: #875fff;
+      --aqua: #00d7af;
+      --cyan: #00ffff;
+      --terminal-green: #39ff70;
+      --orange: #ff8700;
+      --gold: #ffd700;
+      --danger: #ff5f5f;
+      --font-ui: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", sans-serif;
+      --font-mono: "SFMono-Regular", "Cascadia Mono", "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--text);
+      background-color: var(--ink);
+      background-image:
+        linear-gradient(rgba(0, 255, 255, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 95, 215, .025) 1px, transparent 1px);
+      background-size: 24px 24px;
+      font-family: var(--font-ui);
+      letter-spacing: 0;
+    }
+
+    button, textarea { font: inherit; }
+
+    .shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      width: min(1180px, 100%);
+      height: 100dvh;
+      margin: 0 auto;
+      border-inline: 1px solid var(--line);
+      background: rgba(9, 11, 12, .94);
+    }
+
+    .masthead {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: end;
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--line);
+      box-shadow: inset 0 -2px 0 rgba(0, 255, 255, .08);
+    }
+
+    .brand {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .logo {
+      margin: 0;
+      color: var(--pink);
+      font: 700 clamp(8px, 1.2vw, 14px)/1.05 var(--font-mono);
+      white-space: pre;
+      text-shadow: 0 0 18px rgba(255, 95, 215, .3);
+    }
+
+    .subtitle {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+      color: var(--orange);
+      font-size: 15px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .subtitle::before,
+    .subtitle::after {
+      content: "";
+      width: 38px;
+      height: 1px;
+      background: var(--orange);
+    }
+
+    .telemetry {
+      display: grid;
+      gap: 8px;
+      min-width: 220px;
+      padding-left: 20px;
+      border-left: 1px solid var(--line);
+      font: 12px/1.3 var(--font-mono);
+      color: var(--muted);
+    }
+
+    .telemetry-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .telemetry strong {
+      max-width: 210px;
+      overflow: hidden;
+      color: var(--cyan);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 7px;
+      border-radius: 50%;
+      background: var(--orange);
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .status.online { color: var(--aqua); }
+    .status.online::before { background: var(--aqua); }
+    .status.error { color: var(--danger); }
+    .status.error::before { background: var(--danger); }
+
+    .transcript {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 24px;
+      scrollbar-color: var(--line) transparent;
+    }
+
+    .empty-state {
+      display: grid;
+      place-content: center;
+      min-height: 100%;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .empty-state strong {
+      color: var(--gold);
+      font: 700 18px var(--font-mono);
+    }
+
+    .message {
+      display: grid;
+      grid-template-columns: 96px minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px 0;
+      border-bottom: 1px solid rgba(52, 64, 71, .6);
+      animation: reveal .22s ease-out both;
+    }
+
+    .role {
+      padding-top: 3px;
+      color: var(--aqua);
+      font: 700 12px var(--font-mono);
+      text-transform: uppercase;
+    }
+
+    .message.user .role { color: var(--pink); }
+
+    .message.assistant .content {
+      color: var(--terminal-green);
+      text-shadow: 0 0 8px rgba(57, 255, 112, .18);
+    }
+
+    .content {
+      min-width: 0;
+      font: 14px/1.65 var(--font-mono);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .composer {
+      padding: 14px 24px 20px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .prompt-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .prompt-mark {
+      padding-bottom: 12px;
+      color: var(--pink);
+      font: 700 18px var(--font-mono);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 48px;
+      max-height: 180px;
+      resize: none;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      outline: none;
+      color: var(--text);
+      background: var(--panel-strong);
+      font-family: var(--font-mono);
+      line-height: 1.45;
+    }
+
+    textarea:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 2px rgba(0, 255, 255, .1);
+    }
+
+    .actions { display: flex; gap: 8px; }
+
+    button {
+      min-width: 46px;
+      height: 46px;
+      padding: 0 15px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--text);
+      background: transparent;
+      cursor: pointer;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    button:hover { border-color: var(--aqua); color: var(--aqua); }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+
+    .send {
+      border-color: var(--pink);
+      color: var(--ink);
+      background: var(--pink);
+    }
+
+    .send:hover { border-color: var(--cyan); color: var(--ink); background: var(--cyan); }
+
+    .utility-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 10px;
+      color: var(--muted);
+      font: 11px var(--font-mono);
+    }
+
+    .utility-row button {
+      width: auto;
+      min-width: 0;
+      height: auto;
+      padding: 0;
+      border: 0;
+      color: var(--orange);
+      background: none;
+      font: inherit;
+    }
+
+    @keyframes reveal {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 720px) {
+      .masthead { grid-template-columns: 1fr; padding: 14px 16px 12px; }
+      .telemetry { grid-template-columns: 1fr 1fr; min-width: 0; padding: 10px 0 0; border-top: 1px solid var(--line); border-left: 0; }
+      .telemetry-row { display: grid; gap: 2px; }
+      .logo { font-size: clamp(6px, 2vw, 10px); }
+      .transcript { padding: 16px; }
+      .message { grid-template-columns: 1fr; gap: 7px; }
+      .composer { padding: 12px 16px 16px; }
+      .prompt-row { grid-template-columns: minmax(0, 1fr) auto; }
+      .prompt-mark { display: none; }
+      .actions { flex-direction: column-reverse; }
+      button { height: 42px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .message { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand" aria-label="WarStick Command Console">
+        <pre class="logo" aria-hidden="true">__        __         ____  _   _      _
+\ \      / /_ _ _ __/ ___|| |_(_) ___| | __
+ \ \ /\ / / _` | '__\___ \| __| |/ __| |/ /
+  \ V  V / (_| | |   ___) | |_| | (__|   &lt;
+   \_/\_/ \__,_|_|  |____/ \__|_|\___|_|\_\</pre>
+        <div class="subtitle">Command Console</div>
+      </div>
+      <div class="telemetry" aria-live="polite">
+        <div class="telemetry-row"><span>ENGINE</span><strong id="status" class="status">CONNECTING</strong></div>
+        <div class="telemetry-row"><span>MODEL</span><strong id="model">DISCOVERING</strong></div>
+        <div class="telemetry-row"><span>PORT</span><strong>9931</strong></div>
+      </div>
+    </header>
+
+    <section id="transcript" class="transcript" aria-live="polite">
+      <div id="empty" class="empty-state">
+        <div><strong>TACTICAL CHANNEL READY</strong><br>Awaiting command input.</div>
+      </div>
+    </section>
+
+    <form id="composer" class="composer">
+      <div class="prompt-row">
+        <span class="prompt-mark">&gt;_</span>
+        <textarea id="prompt" rows="1" placeholder="Enter objective..." aria-label="Message" required></textarea>
+        <div class="actions">
+          <button id="stop" type="button" title="Stop generation" disabled>Stop</button>
+          <button id="send" class="send" type="submit" title="Send message">Send</button>
+        </div>
+      </div>
+      <div class="utility-row">
+        <span>ENTER TO SEND · SHIFT+ENTER FOR NEW LINE</span>
+        <button id="clear" type="button">Clear transcript</button>
+      </div>
+    </form>
+  </main>
+
+  <script>
+    const transcript = document.querySelector("#transcript");
+    const empty = document.querySelector("#empty");
+    const form = document.querySelector("#composer");
+    const prompt = document.querySelector("#prompt");
+    const send = document.querySelector("#send");
+    const stop = document.querySelector("#stop");
+    const clear = document.querySelector("#clear");
+    const status = document.querySelector("#status");
+    const modelName = document.querySelector("#model");
+
+    const messages = [];
+    let controller = null;
+
+    function setStatus(label, state = "") {
+      status.textContent = label;
+      status.className = `status ${state}`;
+    }
+
+    function addMessage(role, content = "") {
+      empty.hidden = true;
+      const article = document.createElement("article");
+      article.className = `message ${role}`;
+      const label = document.createElement("div");
+      label.className = "role";
+      label.textContent = role === "user" ? "Operator" : "WarStick";
+      const body = document.createElement("div");
+      body.className = "content";
+      body.textContent = content;
+      article.append(label, body);
+      transcript.append(article);
+      transcript.scrollTop = transcript.scrollHeight;
+      return body;
+    }
+
+    async function discoverModel() {
+      try {
+        const response = await fetch("/v1/models");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        modelName.textContent = payload.data?.[0]?.id || "LOCAL MODEL";
+        setStatus("ONLINE", "online");
+      } catch {
+        modelName.textContent = "UNAVAILABLE";
+        setStatus("OFFLINE", "error");
+      }
+    }
+
+    async function generate() {
+      const text = prompt.value.trim();
+      if (!text || controller) return;
+
+      prompt.value = "";
+      prompt.style.height = "auto";
+      messages.push({ role: "user", content: text });
+      addMessage("user", text);
+      const output = addMessage("assistant");
+
+      controller = new AbortController();
+      send.disabled = true;
+      stop.disabled = false;
+      setStatus("GENERATING");
+
+      try {
+        const response = await fetch("/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ messages, stream: true, temperature: 0.7 })
+        });
+        if (!response.ok || !response.body) throw new Error(`Request failed: HTTP ${response.status}`);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let answer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+            try {
+              const chunk = JSON.parse(line.slice(6));
+              answer += chunk.choices?.[0]?.delta?.content || "";
+              output.textContent = answer;
+              transcript.scrollTop = transcript.scrollHeight;
+            } catch { }
+          }
+        }
+
+        messages.push({ role: "assistant", content: answer });
+        setStatus("ONLINE", "online");
+      } catch (error) {
+        if (error.name === "AbortError") {
+          output.textContent ||= "[generation stopped]";
+          setStatus("ONLINE", "online");
+        } else {
+          output.textContent = `[system error] ${error.message}`;
+          setStatus("ERROR", "error");
+        }
+      } finally {
+        controller = null;
+        send.disabled = false;
+        stop.disabled = true;
+        prompt.focus();
+      }
+    }
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      generate();
+    });
+
+    prompt.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    prompt.addEventListener("input", () => {
+      prompt.style.height = "auto";
+      prompt.style.height = `${Math.min(prompt.scrollHeight, 180)}px`;
+    });
+
+    stop.addEventListener("click", () => controller?.abort());
+    clear.addEventListener("click", () => {
+      messages.length = 0;
+      transcript.querySelectorAll(".message").forEach(node => node.remove());
+      empty.hidden = false;
+      prompt.focus();
+    });
+
+    discoverModel();
+    prompt.focus();
+  </script>
+</body>
+</html>
