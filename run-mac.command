@@ -82,7 +82,7 @@ while true; do
                 echo -e "\n${PURPLE}─── OPERATIONAL CYCLE $STEP OF 3 ───────────────────────────${RESET}"
 
                 PAYLOAD=$(cat <<EOF
-{"messages": [{"role": "system", "content": "You are an autonomous tactical offensive security engine targeting macOS (Darwin). Output ONLY the single exact executable macOS/BSD terminal command line (e.g. ifconfig, netstat, lsof, scutil, dscl, launchctl, ps, route, curl, grep, awk, sed) to advance toward the objective. Do NOT use Python (do not pipe to python, python3, or python -m json.tool) or Linux-only tools (no ip, ss). Use built-in POSIX utilities (grep, awk, sed, cut, tr, jq if available) for data filtering. Do not think, explain, or discuss. Output ONLY the raw command string."}, {"role": "user", "content": "$CURRENT_CONTEXT"}], "temperature": 0.1, "max_tokens": 512}
+{"messages": [{"role": "system", "content": "You are an autonomous tactical offensive security engine targeting macOS (Darwin). Output ONLY the single exact executable macOS/BSD terminal command line (e.g. ifconfig, netstat, lsof, scutil, dscl, launchctl, ps, route, curl, grep, awk, sed) to advance toward the objective. Do NOT use Python (do not pipe to python, python3, or python -m json.tool) or Linux-only tools (no ip, ss). Use built-in POSIX utilities (grep, awk, sed, cut, tr, jq if available) for data filtering. Do not think, explain, or discuss. Output ONLY the raw command string without a shell prompt prefix."}, {"role": "user", "content": "$CURRENT_CONTEXT"}], "temperature": 0.1, "max_tokens": 96}
 EOF
 )
                 query_llm_with_live_animation "$PAYLOAD"
@@ -198,7 +198,7 @@ EOF
             else
                 SKILLS_MANIFEST=$(get_skills_manifest)
                 PAYLOAD=$(cat <<EOF
-{"messages": [{"role": "system", "content": "You are a terminal command utility mapping engine for macOS (Darwin). Output ONLY the single exact executable macOS/BSD terminal command string to resolve the prompt target parameter. Available custom skills: $SKILLS_MANIFEST. You may invoke a custom skill script via \"$USB_ROOT/agent/skills/<script> <arg>\" if matching. Do NOT use Python (do not use python, python3, or pipe to python -m json.tool). Use native CLI tools like curl, grep, awk, sed, cut, tr, scutil, networksetup, ifconfig, netstat, lsof. Do not think, explain, or discuss. No markdown, raw command line only."}, {"role": "user", "content": "$CUSTOM_TASK"}], "temperature": 0.1, "max_tokens": 512}
+{"messages": [{"role": "system", "content": "You are a terminal command utility mapping engine for macOS (Darwin). Output ONLY the single exact executable macOS/BSD terminal command string to resolve the prompt target parameter. Available custom skills: $SKILLS_MANIFEST. You may invoke a custom skill script via \"$USB_ROOT/agent/skills/<script> <arg>\" if matching. Do NOT use Python (do not use python, python3, or pipe to python -m json.tool). Use native CLI tools like curl, grep, awk, sed, cut, tr, scutil, networksetup, ifconfig, netstat, lsof. Do not think, explain, or discuss. No markdown or shell prompt prefix; output the raw command line only."}, {"role": "user", "content": "$CUSTOM_TASK"}], "temperature": 0.1, "max_tokens": 96}
 EOF
 )
                 query_llm_with_live_animation "$PAYLOAD"

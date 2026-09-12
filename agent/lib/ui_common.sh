@@ -526,115 +526,103 @@ validate_shell_command() {
 # ─── RESPONSE JSON PARSER & REFUSAL DETECTOR ───────────────────
 clean_json_command() {
     local raw_input="$1"
-    local cleaned=""
+    local content=""
+    local final_cmd=""
 
-    # Try precise Python JSON parsing and reasoning extraction
-    if command -v python3 >/dev/null 2>&1; then
-        cleaned=$(echo "$raw_input" | python3 -c '
-import sys, json, re
-
-raw = sys.stdin.read().strip()
-if not raw:
-    sys.exit(0)
-
-try:
-    data = json.loads(raw)
-except Exception:
-    data = {}
-
-content = ""
-reasoning = ""
-
-if isinstance(data, dict):
-    choices = data.get("choices", [])
-    if choices and isinstance(choices, list):
-        msg = choices[0].get("message", {})
-        content = (msg.get("content") or "").strip()
-        reasoning = (msg.get("reasoning_content") or "").strip()
-
-# If content is empty but model put reasoning tokens, extract from reasoning
-if not content and reasoning:
-    content = reasoning
-elif not content:
-    content = raw
-
-# 1. Remove XML/think tags
-content = re.sub(r"<think>[\s\S]*?</think>", "", content, flags=re.DOTALL)
-content = re.sub(r"<thought>[\s\S]*?</thought>", "", content, flags=re.DOTALL)
-content = re.sub(r"\[/?INST\]", "", content)
-
-# 2. Extract markdown code block if present
-code_blocks = re.findall(r"```(?:bash|sh|zsh|powershell|cmd|batch)?\s*\n?([\s\S]*?)```", content)
-if code_blocks:
-    content = code_blocks[-1].strip()
-
-# 3. Clean and filter candidate command lines
-lines = [l.strip() for l in content.split("\n") if l.strip()]
-valid_lines = []
-for l in lines:
-    # Skip JSON structural artifacts and headers
-    if l.startswith(("{", "}", "[", "]", "\"", "choices:", "data:")):
-        continue
-    if l.startswith(("#", "```", "---", "===")):
-        continue
-    # Skip internal thinking/conversational prose
-    if re.match(r"^(We need|Let\x27s|I will|The user|First,|Note:|Option|Step \d|Here is|To accomplish|This command|According to|In order to)", l, re.IGNORECASE):
-        continue
-    valid_lines.append(l)
-
-final_cmd = ""
-if valid_lines:
-    # Pick the cleanest command line (prefer line without trailing punctuation)
-    for candidate in valid_lines:
-        if not candidate.endswith((".", "?", "!")) and not candidate.startswith("//"):
-            final_cmd = candidate
-            break
-    if not final_cmd:
-        final_cmd = valid_lines[0]
-elif lines:
-    final_cmd = lines[-1].strip("`")
-
-# Strip markdown backticks without removing command argument quotes
-final_cmd = final_cmd.strip("`").strip()
-final_cmd = re.sub(r"\\[nt]", " ", final_cmd)
-final_cmd = re.sub(r"\\+", "", final_cmd)
-
-# Guard against printing raw JSON objects
-if final_cmd.startswith(("{", "choices:", "[{")):
-    final_cmd = ""
-
-# Detect unpopulated placeholder templates (e.g. <target_ip>, <port>, <file_path>, [TARGET])
-# These cause shell syntax errors if executed directly via eval
-if re.search(r"<[a-zA-Z0-9_\-]+>|\[(?:target|ip|port|host|username|password|path|file)[^\]]*\]", final_cmd, re.IGNORECASE):
-    print("TEMPLATE: " + final_cmd)
-    sys.exit(0)
-
-print(final_cmd)
-' 2>/dev/null)
+    # 1. Extract JSON content field (try multiple patterns for robustness)
+    # Handle both escaped and unescaped quotes
+    content=$(echo "$raw_input" | sed -n 's/.*"content":"//p' | sed 's/"}.*//' | head -1)
+    
+    # If that didn't work, try extracting reasoning_content
+    if [ -z "$content" ]; then
+        content=$(echo "$raw_input" | sed -n 's/.*"reasoning_content":"//p' | sed 's/"}.*//' | head -1)
+    fi
+    
+    # If still empty, try extracting from whole response
+    if [ -z "$content" ]; then
+        content="$raw_input"
     fi
 
-    # Fallback if Python is unavailable
-    if [ -z "$cleaned" ]; then
-        cleaned=$(echo "$raw_input" | grep -o '"content":"[^"]*' | sed 's/"content":"//')
-    fi
-    if [ -z "$cleaned" ]; then
-        cleaned=$(echo "$raw_input" | sed -n '/```/,/```/p' | grep -v '```')
-    fi
-    cleaned=$(echo "$cleaned" | tr -d '`' | sed 's/\\n/ /g' | sed 's/\\t/ /g' | sed 's/\\//g')
+    # Convert escaped newlines to actual newlines for processing
+    content=$(echo -e "$content")
 
-    # Guard: never return raw JSON payload
-    if [[ "$cleaned" =~ ^\{.*\} || "$cleaned" =~ ^choices: || "$cleaned" =~ ^\[\{ ]]; then
-        cleaned=""
+    # 2. Remove XML/think tags using sed
+    content=$(echo "$content" | sed -e 's/<think>.*<\/think>//g' -e 's/<thought>.*<\/thought>//g' -e 's/\[INST\]//g' -e 's/\[\/INST\]//g')
+
+    # 3. Extract markdown code blocks if present (prefer last block)
+    local code_block=$(echo "$content" | sed -n '/```/,/```/p' | grep -v '```' | tail -20)
+    if [ -n "$code_block" ]; then
+        content="$code_block"
     fi
 
-    # Detect unpopulated placeholder templates
-    if echo "$cleaned" | grep -iqE "<[a-zA-Z0-9_\-]+>|\[(target|ip|port|host|username|password|path|file)"; then
-        echo "TEMPLATE: $cleaned"
-    elif echo "$cleaned" | grep -iqE "cannot assist|sorry|illegal|unethical|certified security|as an ai|i am unable|as a language model|policy|disclaimer"; then
-        echo "REFUSAL: $cleaned"
-    elif [ -z "$cleaned" ]; then
+    # 4. Clean and filter lines - remove prose
+    # Loop through lines and find the best command candidate
+    local line
+    while IFS= read -r line; do
+        line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        
+        # Skip empty lines
+        [ -z "$line" ] && continue
+        
+        # Skip JSON structural artifacts
+        if echo "$line" | grep -qE '^\{|\}|^\[|\]|^"|^choices:|^data:'; then
+            continue
+        fi
+        
+        # Skip comments and markdown markers
+        if echo "$line" | grep -qE '^#|^```|^---|^==='; then
+            continue
+        fi
+        
+        # Skip very short lines (< 4 chars)
+        [ ${#line} -lt 4 ] && continue
+        
+        # Skip pure prose lines starting with common prose patterns
+        if echo "$line" | grep -iqE '^(We need|Lets|I will|The user|The |Firsts|Note:|Option|Step [0-9]|Here is|To accomplish|This command|According to|In order to|So |This |That |Now |Just |And |But |Or |Im|You can|More info|Output|Result|Results|It |He |She |They |What |When |Where |Why |How |The best|The most|The only|Heres|Thats)'; then
+            continue
+        fi
+        
+        # Skip lines that end with sentence-ending punctuation (likely prose)
+        if echo "$line" | grep -qE '\.$|^[A-Z][a-z]+(\s+[a-z]+)*\.$'; then
+            continue
+        fi
+        
+        # Skip if it looks like starting a number or is just capitalized prose
+        if echo "$line" | grep -qE '^[0-9]+\.|^[A-Z][a-z]+(\s+[a-z]+)*$'; then
+            continue
+        fi
+        
+        # If line has shell operators or looks like a command, accept it
+        if echo "$line" | grep -qE '[/\-|><&$*\(\)\[\]`"\047]'; then
+            # Reject if it ends with punctuation
+            if ! echo "$line" | grep -qE '\.|!|\?$'; then
+                final_cmd="$line"
+                break
+            fi
+        fi
+    done <<< "$content"
+
+    # 5. Fallback: if no good command found, try to extract from any remaining content
+    if [ -z "$final_cmd" ]; then
+        final_cmd=$(echo "$content" | tail -5 | grep -v '^[A-Z][a-z]*' | tail -1)
+    fi
+
+    # 6. Clean up the command (remove backticks, escaped newlines, and leading shell prompt symbols like $, #, >, %)
+    final_cmd=$(echo "$final_cmd" | sed -e "s/^\`\`\`//g" -e "s/\`\`\`$//g" -e 's/\\n/ /g' -e 's/\\t/ /g' -e "s/\\\\//g" -e "s/^\`//g" -e "s/\`$//g" | sed -E 's/^[[:space:]]*[\$#>%][[:space:]]+//')
+
+    # 7. Guard: never return raw JSON payload
+    if echo "$final_cmd" | grep -qE '^\{|^choices:|^\[\{'; then
+        final_cmd=""
+    fi
+
+    # 8. Detect unpopulated placeholder templates
+    if echo "$final_cmd" | grep -iqE '<[a-zA-Z0-9_\-]+>|\[(target|ip|port|host|username|password|path|file)'; then
+        echo "TEMPLATE: $final_cmd"
+    elif echo "$final_cmd" | grep -iqE 'cannot assist|sorry|illegal|unethical|certified security|as an ai|i am unable|as a language model|policy|disclaimer'; then
+        echo "REFUSAL: $final_cmd"
+    elif [ -z "$final_cmd" ]; then
         echo "ERROR: Model did not produce a clean executable command."
     else
-        echo "$cleaned"
+        echo "$final_cmd"
     fi
 }

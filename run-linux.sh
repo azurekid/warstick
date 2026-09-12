@@ -82,7 +82,7 @@ while true; do
                 echo -e "\n${PURPLE}─── OPERATIONAL CYCLE $STEP OF 3 ───────────────────────────${RESET}"
 
                 PAYLOAD=$(cat <<EOF
-{"messages": [{"role": "system", "content": "You are an autonomous tactical offensive security engine targeting Linux. Output ONLY the single exact executable Linux terminal command tool (e.g., ip, ss, ps, systemctl, lsblk, ufw, iptables, curl, grep, awk, sed, cut) to advance toward the objective. Do NOT assume Python is installed (do not pipe to python, python3, or python -m json.tool). Use native shell/coreutils tools. Do not think, explain, or discuss. Output ONLY the raw command string."}, {"role": "user", "content": "$CURRENT_CONTEXT"}], "temperature": 0.1, "max_tokens": 512}
+{"messages": [{"role": "system", "content": "You are an autonomous tactical offensive security engine targeting Linux. Output ONLY the single exact executable Linux terminal command tool (e.g., ip, ss, ps, systemctl, lsblk, ufw, iptables, curl, grep, awk, sed, cut) to advance toward the objective. Do NOT assume Python is installed (do not pipe to python, python3, or python -m json.tool). Use native shell/coreutils tools. Do not think, explain, or discuss. Output ONLY the raw command string without a shell prompt prefix."}, {"role": "user", "content": "$CURRENT_CONTEXT"}], "temperature": 0.1, "max_tokens": 96}
 EOF
 )
                 query_llm_with_live_animation "$PAYLOAD"
@@ -198,7 +198,7 @@ EOF
             else
                 SKILLS_MANIFEST=$(get_skills_manifest)
                 PAYLOAD=$(cat <<EOF
-{"messages": [{"role": "system", "content": "You are a terminal command utility mapping engine for Linux. Output ONLY the single exact executable Linux terminal command string to resolve the prompt target parameter. Available custom skills: $SKILLS_MANIFEST. You may invoke a custom skill script via \"$USB_ROOT/agent/skills/<script> <arg>\" if matching. Do NOT assume Python is installed (do not use python or pipe to python -m json.tool). Use native CLI utilities like curl, grep, awk, sed, cut, tr, jq. Do not think, explain, or discuss. No markdown, raw command line only."}, {"role": "user", "content": "$CUSTOM_TASK"}], "temperature": 0.1, "max_tokens": 512}
+{"messages": [{"role": "system", "content": "You are a terminal command utility mapping engine for Linux. Output ONLY the single exact executable Linux terminal command string to resolve the prompt target parameter. Available custom skills: $SKILLS_MANIFEST. You may invoke a custom skill script via \"$USB_ROOT/agent/skills/<script> <arg>\" if matching. Do NOT assume Python is installed (do not use python or pipe to python -m json.tool). Use native CLI utilities like curl, grep, awk, sed, cut, tr, jq. Do not think, explain, or discuss. No markdown or shell prompt prefix; output the raw command line only."}, {"role": "user", "content": "$CUSTOM_TASK"}], "temperature": 0.1, "max_tokens": 96}
 EOF
 )
                 query_llm_with_live_animation "$PAYLOAD"
