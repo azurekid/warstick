@@ -398,6 +398,9 @@
           </label>
         </div>
         <div id="image-options" class="image-options" hidden>
+          <label>MODEL
+            <select id="image-model" aria-label="Image model"></select>
+          </label>
           <label>SIZE
             <select id="image-size">
               <option value="512x512">512 x 512</option>
@@ -428,6 +431,7 @@
     const imageModeButton = document.querySelector("#image-mode");
     const chatOptions = document.querySelector("#chat-options");
     const imageOptions = document.querySelector("#image-options");
+    const imageModel = document.querySelector("#image-model");
     const imageSize = document.querySelector("#image-size");
     const imageOffload = document.querySelector("#image-offload");
     const warModeToggle = document.querySelector("#war-mode");
@@ -465,7 +469,7 @@
       imageOptions.hidden = !imageMode;
       prompt.placeholder = imageMode ? "Describe an image..." : "Enter objective...";
       send.textContent = imageMode ? "Create" : "Send";
-      modelName.textContent = imageMode ? "Z-IMAGE TURBO" : modelName.dataset.chatModel || modelName.textContent;
+      modelName.textContent = imageMode ? imageModel.value || "Z-IMAGE TURBO" : modelName.dataset.chatModel || modelName.textContent;
       checkActiveEngine();
       prompt.focus();
     }
@@ -569,8 +573,18 @@
         return;
       }
       try {
-        const response = await fetch(`${imageServerUrl}/health`, { cache: "no-store" });
+        const response = await fetch(`${imageServerUrl}/models`, { cache: "no-store" });
         if (!response.ok) throw new Error();
+        const payload = await response.json();
+        const selectedModel = imageModel.value || payload.default;
+        imageModel.replaceChildren(...payload.models.map(model => {
+          const option = document.createElement("option");
+          option.value = model.id;
+          option.textContent = model.label;
+          option.selected = model.id === selectedModel;
+          return option;
+        }));
+        modelName.textContent = imageModel.value || "Z-IMAGE TURBO";
         setStatus("IMAGE READY", "online");
       } catch {
         setStatus("IMAGE OFFLINE", "error");
@@ -590,7 +604,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
-          body: JSON.stringify({ prompt: text, width, height, steps: 8, offloadToCpu: imageOffload.checked })
+          body: JSON.stringify({ prompt: text, model: imageModel.value, width, height, offloadToCpu: imageOffload.checked })
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || `Request failed: HTTP ${response.status}`);
@@ -706,6 +720,7 @@
     stop.addEventListener("click", () => controller?.abort());
     chatModeButton.addEventListener("click", () => setGenerationMode("chat"));
     imageModeButton.addEventListener("click", () => setGenerationMode("image"));
+    imageModel.addEventListener("change", () => { modelName.textContent = imageModel.value; });
     warModeToggle.addEventListener("change", () => {
       setWarMode(warModeToggle.checked);
       persistHistory();

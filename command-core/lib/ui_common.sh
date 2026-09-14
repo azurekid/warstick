@@ -644,7 +644,7 @@ stop_history_server() {
 
 start_image_server() {
     if curl -fsS -m 1 "http://127.0.0.1:9933/health" >/dev/null 2>&1; then
-        echo -e "${GREEN}[✓] Z-Image Turbo service is online on Port 9933.${RESET}"
+        echo -e "${GREEN}[✓] Image generation service is online on Port 9933.${RESET}"
         return 0
     fi
     if ! command -v perl >/dev/null 2>&1; then
@@ -656,31 +656,28 @@ start_image_server() {
     [ "$OS_TYPE" == "mac" ] && BIN_ROOT="$USB_ROOT/bin/mac-arm64/image"
     local SD_BINARY
     SD_BINARY=$(find "$BIN_ROOT" -type f -name 'sd-cli' -print -quit 2>/dev/null)
-    local MODEL_DIR="$USB_ROOT/models/image/z-image-turbo"
-    local DIFFUSION_MODEL="$MODEL_DIR/z_image_turbo-Q3_K.gguf"
-    local VAE_MODEL="$MODEL_DIR/ae.safetensors"
-    local LLM_MODEL="$MODEL_DIR/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
-    if [ -z "$SD_BINARY" ] || [ ! -f "$DIFFUSION_MODEL" ] || [ ! -f "$VAE_MODEL" ] || [ ! -f "$LLM_MODEL" ]; then
-        echo -e "${ORANGE}[*] Z-Image Turbo is not installed. Run setup to enable image generation.${RESET}"
+    local MODELS_DIR="$USB_ROOT/models/image"
+    if [ -z "$SD_BINARY" ] || [ ! -d "$MODELS_DIR" ]; then
+        echo -e "${ORANGE}[*] No image model bundle is installed. Run setup to enable image generation.${RESET}"
         return 1
     fi
 
     mkdir -p "$USB_ROOT/warstick-logs" "$USB_ROOT/generated-images"
     chmod +x "$SD_BINARY" 2>/dev/null || true
     perl "$USB_ROOT/command-core/lib/image_server.pl" \
-        "$SD_BINARY" "$DIFFUSION_MODEL" "$VAE_MODEL" "$LLM_MODEL" "$USB_ROOT/generated-images" \
+        "$SD_BINARY" "$MODELS_DIR" "$USB_ROOT/generated-images" \
         >"$USB_ROOT/warstick-logs/image-server.log" 2>&1 &
     IMAGE_SERVER_PID=$!
 
     local ATTEMPT
     for ATTEMPT in {1..20}; do
         if curl -fsS -m 1 "http://127.0.0.1:9933/health" >/dev/null 2>&1; then
-            echo -e "${GREEN}[✓] Z-Image Turbo service is online on Port 9933.${RESET}"
+            echo -e "${GREEN}[✓] Image generation service is online on Port 9933.${RESET}"
             return 0
         fi
         sleep 0.1
     done
-    echo -e "${ORANGE}[!] Z-Image Turbo service failed to start. See warstick-logs/image-server.log.${RESET}"
+    echo -e "${ORANGE}[!] Image generation service failed to start. See warstick-logs/image-server.log.${RESET}"
     stop_image_server
     return 1
 }
@@ -1011,8 +1008,9 @@ clean_json_command() {
         final_cmd=$(echo "$content" | tail -5 | grep -v '^[A-Z][a-z]*' | tail -1)
     fi
 
-    # 6. Clean up the command (remove backticks, escaped newlines, and leading shell prompt symbols like $, #, >, %)
+    # 6. Clean up markdown wrappers, escaped newlines, and leading shell prompt symbols like $, #, >, %
     final_cmd=$(echo "$final_cmd" | sed -e "s/^\`\`\`//g" -e "s/\`\`\`$//g" -e 's/\\n/ /g' -e 's/\\t/ /g' -e "s/\\\\//g" -e "s/^\`//g" -e "s/\`$//g" | sed -E 's/^[[:space:]]*[\$#>%][[:space:]]+//')
+    final_cmd=$(printf '%s' "$final_cmd" | sed -E 's/^\*\*(.*)\*\*$/\1/;s/^__(.*)__$/\1/')
 
     # 7. Guard: never return raw JSON payload
     if echo "$final_cmd" | grep -qE '^\{|^choices:|^\[\{'; then

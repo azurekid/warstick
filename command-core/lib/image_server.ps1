@@ -1,8 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$SdBinary,
-    [Parameter(Mandatory = $true)][string]$DiffusionModel,
-    [Parameter(Mandatory = $true)][string]$VaeModel,
-    [Parameter(Mandatory = $true)][string]$LlmModel,
+    [Parameter(Mandatory = $true)][string]$ModelsDirectory,
     [Parameter(Mandatory = $true)][string]$OutputDirectory
 )
 
@@ -13,12 +11,43 @@ $maxBodyBytes = 64KB
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $listener = [System.Net.Sockets.TcpListener]::new($hostAddress, $port)
 
-foreach ($requiredFile in @($SdBinary, $DiffusionModel, $VaeModel, $LlmModel)) {
-    if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
-        throw "Required image-generation file not found: $requiredFile"
+if (-not (Test-Path -LiteralPath $SdBinary -PathType Leaf)) { throw "Image-generation binary not found: $SdBinary" }
+if (-not (Test-Path -LiteralPath $ModelsDirectory -PathType Container)) { throw "Image model directory not found: $ModelsDirectory" }
+New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+
+$models = @{}
+$zImageDirectory = Join-Path $ModelsDirectory 'z-image-turbo'
+$zImageVae = Join-Path $zImageDirectory 'ae.safetensors'
+$zImageLlm = Join-Path $zImageDirectory 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
+if ((Test-Path $zImageVae) -and (Test-Path $zImageLlm)) {
+    Get-ChildItem -LiteralPath $zImageDirectory -Filter 'z_image_turbo-*.gguf' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $models["z-image-turbo/$($_.Name)"] = @{
+            Label = "Z-Image Turbo / $($_.Name)"
+            Arguments = @('--diffusion-model', $_.FullName, '--vae', $zImageVae, '--llm', $zImageLlm)
+            Steps = 8
+        }
     }
 }
-New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+
+$fluxDirectory = Join-Path $ModelsDirectory 'flux1-schnell'
+$fluxVae = Join-Path $fluxDirectory 'ae.safetensors'
+$fluxClip = Join-Path $fluxDirectory 'clip_l.safetensors'
+$fluxT5 = Join-Path $fluxDirectory 't5xxl_fp8_e4m3fn.safetensors'
+if ((Test-Path $fluxVae) -and (Test-Path $fluxClip) -and (Test-Path $fluxT5)) {
+    Get-ChildItem -LiteralPath $fluxDirectory -Filter 'flux1-schnell-*.gguf' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $models["flux1-schnell/$($_.Name)"] = @{
+            Label = "FLUX.1 Schnell / $($_.Name)"
+            Arguments = @(
+                '--diffusion-model', $_.FullName, '--vae', $fluxVae,
+                '--clip_l', $fluxClip, '--t5xxl', $fluxT5,
+                '--sampling-method', 'euler', '--clip-on-cpu'
+            )
+            Steps = 4
+        }
+    }
+}
+if ($models.Count -eq 0) { throw "No complete image model bundles found below $ModelsDirectory" }
+$defaultModel = @($models.Keys | Sort-Object { if ($_ -like 'z-image-turbo/*') { 0 } else { 1 } }, { $_ })[0]
 
 function Read-HttpLine($Stream) {
     $bytes = New-Object System.Collections.Generic.List[byte]
@@ -75,7 +104,9 @@ function Invoke-ImageGeneration($Payload) {
 
     $width = Get-BoundedInteger $Payload.width 1024 256 2048 'width'
     $height = Get-BoundedInteger $Payload.height 1024 256 2048 'height'
-    $steps = Get-BoundedInteger $Payload.steps 8 1 50 'steps'
+    $model = if ([string]::IsNullOrWhiteSpace($Payload.model)) { $defaultModel } else { [string]$Payload.model }
+    if (-not $models.ContainsKey($model)) { throw 'Unknown image model.' }
+    $steps = Get-BoundedInteger $Payload.steps $models[$model].Steps 1 50 'steps'
     if ($width % 64 -ne 0 -or $height % 64 -ne 0) { throw 'Width and height must be multiples of 64.' }
 
     $seed = if ($null -eq $Payload.seed) { Get-Random -Minimum 0 -Maximum 2147483647 } else {
@@ -84,9 +115,7 @@ function Invoke-ImageGeneration($Payload) {
     $filename = 'z-image-{0}-{1}.png' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $seed
     $outputPath = Join-Path $OutputDirectory $filename
     $arguments = @(
-        '--diffusion-model', $DiffusionModel,
-        '--vae', $VaeModel,
-        '--llm', $LlmModel,
+        $models[$model].Arguments
         '--prompt', $Payload.prompt,
         '--cfg-scale', '1.0',
         '--steps', [string]$steps,
@@ -130,7 +159,14 @@ try {
                 continue
             }
             if ($method -eq 'GET' -and $path -eq '/health') {
-                Send-JsonResponse $stream 200 @{ status = 'ready' }
+                Send-JsonResponse $stream 200 @{ status = 'ready'; model = $defaultModel }
+                continue
+            }
+            if ($method -eq 'GET' -and $path -eq '/models') {
+                $availableModels = @($models.Keys | Sort-Object | ForEach-Object {
+                    @{ id = $_; label = $models[$_].Label; steps = $models[$_].Steps }
+                })
+                Send-JsonResponse $stream 200 @{ default = $defaultModel; models = $availableModels }
                 continue
             }
             if ($method -eq 'GET' -and $path -match '^/images/([^/]+\.png)$') {

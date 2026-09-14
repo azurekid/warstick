@@ -46,7 +46,12 @@ function Save-SetupDownload([string]$Url, [string]$TargetPath, [string]$Label) {
     $partialPath = "$TargetPath.part"
     Write-Host "$CYAN[>>] Downloading $Label...$RESET"
     try {
-        Invoke-WebRequest -Uri $Url -OutFile $partialPath -UseBasicParsing
+        $headers = @{}
+        $hfAccessToken = if ($env:HF_TOKEN) { $env:HF_TOKEN } else { $env:HUGGING_FACE_HUB_TOKEN }
+        if ($Url.StartsWith('https://huggingface.co/') -and $hfAccessToken) {
+            $headers.Authorization = "Bearer $hfAccessToken"
+        }
+        Invoke-WebRequest -Uri $Url -OutFile $partialPath -Headers $headers -UseBasicParsing
         Move-Item -LiteralPath $partialPath -Destination $TargetPath -Force
         return $true
     } catch {
@@ -121,6 +126,38 @@ function Install-ZImageTurbo([string]$BackendVariant) {
         if (-not (Save-SetupDownload $download[0] $download[1] $download[2])) { return }
     }
     Write-Host "$GREEN[✓] Z-Image Turbo is ready. Generated images will be stored on this drive.$RESET"
+}
+
+function Install-FluxSchnell {
+    Write-Host "`n$PINK─── [OPTIONAL FLUX.1 SCHNELL // IMAGE GENERATION] ─────────────────$RESET"
+    Write-Host "$CYAN    Requires about 11 GB of downloads and 12 GB of free storage.$RESET"
+    $answer = Read-Host "$ORANGE[?] Install the FLUX.1 Schnell Q3_K_M model bundle? [y/N]$RESET"
+    if ($answer -notmatch '^[Yy]$') { return }
+
+    $modelDir = Join-Path $USB_ROOT 'models\image\flux1-schnell'
+    $hfAccessToken = if ($env:HF_TOKEN) { $env:HF_TOKEN } else { $env:HUGGING_FACE_HUB_TOKEN }
+    if (-not (Test-Path (Join-Path $modelDir 'ae.safetensors')) -and -not $hfAccessToken) {
+        Write-Host "$ORANGE[!] FLUX.1 Schnell requires access to its gated VAE on Hugging Face.$RESET"
+        Write-Host "$WHITE    Accept the model terms, then set HF_TOKEN and rerun setup.$RESET"
+        return
+    }
+
+    $sdBinary = Get-ChildItem -Path (Join-Path $USB_ROOT 'bin\win-x64\image') -Filter 'sd-cli.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $sdBinary) {
+        Write-Host "$ORANGE[!] Install the native image engine from the Z-Image prompt first.$RESET"
+        return
+    }
+
+    $downloads = @(
+        @('https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/flux1-schnell-Q3_K_M.gguf', (Join-Path $modelDir 'flux1-schnell-Q3_K_M.gguf'), 'FLUX.1 Schnell Q3_K_M diffusion model'),
+        @('https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors', (Join-Path $modelDir 'ae.safetensors'), 'FLUX.1 VAE'),
+        @('https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors', (Join-Path $modelDir 'clip_l.safetensors'), 'FLUX CLIP-L text encoder'),
+        @('https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors', (Join-Path $modelDir 't5xxl_fp8_e4m3fn.safetensors'), 'FLUX T5-XXL FP8 text encoder')
+    )
+    foreach ($download in $downloads) {
+        if (-not (Save-SetupDownload $download[0] $download[1] $download[2])) { return }
+    }
+    Write-Host "$GREEN[✓] FLUX.1 Schnell is ready and will appear in the Image model selector.$RESET"
 }
 
 function Initialize-WarStickSetup {
@@ -202,6 +239,7 @@ function Initialize-WarStickSetup {
     }
 
     Install-ZImageTurbo $backendVariant
+    Install-FluxSchnell
 
     Write-Host "`n$GREEN[✓] WarStick Neural Setup Complete!$RESET"
     Start-Sleep -Seconds 1.5

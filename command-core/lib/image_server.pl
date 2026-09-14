@@ -12,14 +12,49 @@ use POSIX qw(strftime);
 my $host = '127.0.0.1';
 my $port = 9933;
 my $max_body_bytes = 64 * 1024;
-my ($sd_binary, $diffusion_model, $vae_model, $llm_model, $output_directory) = @ARGV;
-die "usage: image_server.pl <sd-cli> <diffusion-model> <vae> <llm> <output-directory>\n"
+my ($sd_binary, $models_directory, $output_directory) = @ARGV;
+die "usage: image_server.pl <sd-cli> <models-directory> <output-directory>\n"
     unless defined($output_directory);
 
-for my $path ($sd_binary, $diffusion_model, $vae_model, $llm_model) {
-    die "required image-generation file not found: $path\n" unless -f $path;
-}
+die "image-generation binary not found: $sd_binary\n" unless -f $sd_binary;
+die "image model directory not found: $models_directory\n" unless -d $models_directory;
 make_path($output_directory) unless -d $output_directory;
+
+my %models;
+my $z_image_directory = "$models_directory/z-image-turbo";
+my $z_image_vae = "$z_image_directory/ae.safetensors";
+my $z_image_llm = "$z_image_directory/Qwen3-4B-Instruct-2507-Q4_K_M.gguf";
+if (-f $z_image_vae && -f $z_image_llm) {
+    for my $diffusion_model (glob("$z_image_directory/z_image_turbo-*.gguf")) {
+        my $name = basename($diffusion_model);
+        $models{"z-image-turbo/$name"} = {
+            label => "Z-Image Turbo / $name",
+            arguments => ['--diffusion-model', $diffusion_model, '--vae', $z_image_vae, '--llm', $z_image_llm],
+            steps => 8,
+        };
+    }
+}
+
+my $flux_directory = "$models_directory/flux1-schnell";
+my $flux_vae = "$flux_directory/ae.safetensors";
+my $flux_clip = "$flux_directory/clip_l.safetensors";
+my $flux_t5 = "$flux_directory/t5xxl_fp8_e4m3fn.safetensors";
+if (-f $flux_vae && -f $flux_clip && -f $flux_t5) {
+    for my $diffusion_model (glob("$flux_directory/flux1-schnell-*.gguf")) {
+        my $name = basename($diffusion_model);
+        $models{"flux1-schnell/$name"} = {
+            label => "FLUX.1 Schnell / $name",
+            arguments => [
+                '--diffusion-model', $diffusion_model, '--vae', $flux_vae,
+                '--clip_l', $flux_clip, '--t5xxl', $flux_t5,
+                '--sampling-method', 'euler', '--clip-on-cpu',
+            ],
+            steps => 4,
+        };
+    }
+}
+die "no complete image model bundles found below $models_directory\n" unless keys %models;
+my ($default_model) = sort { ($a !~ /^z-image-turbo\//) <=> ($b !~ /^z-image-turbo\//) || $a cmp $b } keys %models;
 
 my $json = JSON::PP->new->utf8->canonical;
 
@@ -59,7 +94,9 @@ sub generate_image {
 
     my $width = bounded_integer($payload->{width}, 1024, 256, 2048, 'width');
     my $height = bounded_integer($payload->{height}, 1024, 256, 2048, 'height');
-    my $steps = bounded_integer($payload->{steps}, 8, 1, 50, 'steps');
+    my $model = $payload->{model} // $default_model;
+    die "unknown image model\n" unless !ref($model) && exists $models{$model};
+    my $steps = bounded_integer($payload->{steps}, $models{$model}{steps}, 1, 50, 'steps');
     die "width and height must be multiples of 64\n" if $width % 64 || $height % 64;
 
     my $seed = defined($payload->{seed}) ? bounded_integer($payload->{seed}, 0, 0, 2147483647, 'seed') : int(rand(2147483647));
@@ -67,9 +104,7 @@ sub generate_image {
     my $output_path = "$output_directory/$filename";
     my @arguments = (
         $sd_binary,
-        '--diffusion-model', $diffusion_model,
-        '--vae', $vae_model,
-        '--llm', $llm_model,
+        @{$models{$model}{arguments}},
         '--prompt', $prompt,
         '--cfg-scale', '1.0',
         '--steps', $steps,
@@ -116,7 +151,14 @@ while (my $client = $server->accept()) {
         if ($method eq 'OPTIONS') {
             send_json($client, 204, {});
         } elsif ($method eq 'GET' && $path eq '/health') {
-            send_json($client, 200, { status => 'ready' });
+            send_json($client, 200, { status => 'ready', model => $default_model });
+        } elsif ($method eq 'GET' && $path eq '/models') {
+            send_json($client, 200, {
+                default => $default_model,
+                models => [map {
+                    { id => $_, label => $models{$_}{label}, steps => $models{$_}{steps} }
+                } sort keys %models],
+            });
         } elsif ($method eq 'GET' && $path =~ m{^/images/([^/]+\.png)$}) {
             my $filename = basename($1);
             my $image_path = "$output_directory/$filename";

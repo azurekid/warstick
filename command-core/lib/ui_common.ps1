@@ -395,18 +395,15 @@ function Stop-HistoryServer {
 function Start-ImageServer {
     try {
         Invoke-RestMethod -Uri 'http://127.0.0.1:9933/health' -TimeoutSec 1 -ErrorAction Stop | Out-Null
-        Write-Host "$GREEN[✓] Z-Image Turbo service is online on Port 9933.$RESET"
+        Write-Host "$GREEN[✓] Image generation service is online on Port 9933.$RESET"
         return $true
     } catch { }
 
     $binRoot = Join-Path $USB_ROOT 'bin\win-x64\image'
     $sdBinary = Get-ChildItem -Path $binRoot -Filter 'sd-cli.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    $modelDir = Join-Path $USB_ROOT 'models\image\z-image-turbo'
-    $diffusionModel = Join-Path $modelDir 'z_image_turbo-Q3_K.gguf'
-    $vaeModel = Join-Path $modelDir 'ae.safetensors'
-    $llmModel = Join-Path $modelDir 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
-    if (-not $sdBinary -or -not (Test-Path $diffusionModel) -or -not (Test-Path $vaeModel) -or -not (Test-Path $llmModel)) {
-        Write-Host "$ORANGE[*] Z-Image Turbo is not installed. Run setup to enable image generation.$RESET"
+    $modelsDirectory = Join-Path $USB_ROOT 'models\image'
+    if (-not $sdBinary -or -not (Test-Path $modelsDirectory -PathType Container)) {
+        Write-Host "$ORANGE[*] No image model bundle is installed. Run setup to enable image generation.$RESET"
         return $false
     }
 
@@ -414,20 +411,20 @@ function Start-ImageServer {
     $outputDirectory = Join-Path $USB_ROOT 'generated-images'
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
     $powerShellPath = (Get-Process -Id $PID).Path
-    $quotedValues = @($scriptPath, $sdBinary.FullName, $diffusionModel, $vaeModel, $llmModel, $outputDirectory) |
+    $quotedValues = @($scriptPath, $sdBinary.FullName, $modelsDirectory, $outputDirectory) |
         ForEach-Object { '"{0}"' -f ($_ -replace '"', '\"') }
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -File {0} -SdBinary {1} -DiffusionModel {2} -VaeModel {3} -LlmModel {4} -OutputDirectory {5}' -f $quotedValues
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -File {0} -SdBinary {1} -ModelsDirectory {2} -OutputDirectory {3}' -f $quotedValues
     $global:IMAGE_SERVER_PROCESS = Start-Process -FilePath $powerShellPath -ArgumentList $arguments -WindowStyle Hidden -PassThru
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try {
             Invoke-RestMethod -Uri 'http://127.0.0.1:9933/health' -TimeoutSec 1 -ErrorAction Stop | Out-Null
-            Write-Host "$GREEN[✓] Z-Image Turbo service is online on Port 9933.$RESET"
+            Write-Host "$GREEN[✓] Image generation service is online on Port 9933.$RESET"
             return $true
         } catch {
             Start-Sleep -Milliseconds 100
         }
     }
-    Write-Host "$ORANGE[!] Z-Image Turbo service failed to start.$RESET"
+    Write-Host "$ORANGE[!] Image generation service failed to start.$RESET"
     Stop-ImageServer
     return $false
 }
@@ -829,6 +826,7 @@ function Clean-JsonCommand($raw) {
     }
 
     $finalCmd = $finalCmd -replace '^`+|`+$', ''
+    $finalCmd = $finalCmd -replace '^\*\*(.*)\*\*$', '$1' -replace '^__(.*)__$', '$1'
     $finalCmd = $finalCmd -replace '\\n', ' ' -replace '\\t', ' '
 
     if ($finalCmd -match '^(\{|choices:|\[\{)') {

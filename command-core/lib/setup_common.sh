@@ -48,7 +48,12 @@ download_setup_file() {
 
     mkdir -p "$(dirname "$TARGET_PATH")"
     echo -e "${CYAN}[>>] Downloading $LABEL...${RESET}"
-    if curl -fL --progress-bar "$URL" -o "$TARGET_PATH.part"; then
+    local -a CURL_HEADERS=()
+    local HF_ACCESS_TOKEN="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
+    if [[ "$URL" == https://huggingface.co/* ]] && [ -n "$HF_ACCESS_TOKEN" ]; then
+        CURL_HEADERS=(-H "Authorization: Bearer $HF_ACCESS_TOKEN")
+    fi
+    if curl -fL --progress-bar "${CURL_HEADERS[@]}" "$URL" -o "$TARGET_PATH.part"; then
         mv -f "$TARGET_PATH.part" "$TARGET_PATH"
         return 0
     fi
@@ -59,20 +64,61 @@ download_setup_file() {
 
 resolve_sd_release_asset() {
     local ASSET_PATTERN="$1"
+    local PINNED_RELEASE="master-866-42d6c0a"
+    local PINNED_COMMIT="42d6c0a"
     local RELEASE_API="https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest"
     local RELEASE_JSON
-    RELEASE_JSON=$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: WarStick-Setup' "$RELEASE_API") || return 1
-    printf '%s' "$RELEASE_JSON" | perl -MJSON::PP -0777 -e '
-        my $pattern = shift @ARGV;
-        my $release = decode_json(<STDIN>);
-        for my $asset (@{$release->{assets} // []}) {
-            if (($asset->{name} // q{}) =~ /$pattern/) {
-                print $asset->{browser_download_url};
-                exit 0;
+    if RELEASE_JSON=$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: WarStick-Setup' "$RELEASE_API" 2>/dev/null); then
+        printf '%s' "$RELEASE_JSON" | perl -MJSON::PP -0777 -e '
+            my $pattern = shift @ARGV;
+            my $release = decode_json(<STDIN>);
+            for my $asset (@{$release->{assets} // []}) {
+                if (($asset->{name} // q{}) =~ /$pattern/) {
+                    print $asset->{browser_download_url};
+                    exit 0;
+                }
             }
-        }
-        exit 1;
-    ' -- "$ASSET_PATTERN"
+            exit 1;
+        ' -- "$ASSET_PATTERN" && return 0
+    fi
+
+    local RELEASE_URL
+    local RELEASE_TAG
+    local RESOLVED_ASSET=""
+    if RELEASE_URL=$(curl -fsSL -o /dev/null -w '%{url_effective}' -H 'User-Agent: WarStick-Setup' \
+        'https://github.com/leejet/stable-diffusion.cpp/releases/latest' 2>/dev/null); then
+        RELEASE_TAG="${RELEASE_URL##*/}"
+    fi
+    if [ -n "$RELEASE_TAG" ]; then
+        RESOLVED_ASSET=$(curl -fsSL -H 'User-Agent: WarStick-Setup' \
+            "https://github.com/leejet/stable-diffusion.cpp/releases/expanded_assets/$RELEASE_TAG" 2>/dev/null | perl -0777 -e '
+            my $pattern = shift @ARGV;
+            my $html = <STDIN>;
+            while ($html =~ m{href="(/leejet/stable-diffusion\.cpp/releases/download/[^"]+/([^/"]+))"}g) {
+                my ($href, $name) = ($1, $2);
+                if ($name =~ /$pattern/) {
+                    print "https://github.com$href";
+                    exit 0;
+                }
+            }
+            exit 1;
+        ' -- "$ASSET_PATTERN")
+    fi
+    if [ -n "$RESOLVED_ASSET" ]; then
+        printf '%s' "$RESOLVED_ASSET"
+        return 0
+    fi
+
+    local PINNED_ASSET=""
+    if [[ "sd-${PINNED_COMMIT}-bin-Darwin-macOS-arm64.zip" =~ $ASSET_PATTERN ]]; then
+        PINNED_ASSET="sd-master-${PINNED_COMMIT}-bin-Darwin-macOS-26.6.2-arm64.zip"
+    elif [[ "sd-${PINNED_COMMIT}-bin-Linux-x86_64-vulkan.zip" =~ $ASSET_PATTERN ]]; then
+        PINNED_ASSET="sd-master-${PINNED_COMMIT}-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip"
+    elif [[ "sd-${PINNED_COMMIT}-bin-Linux-x86_64.zip" =~ $ASSET_PATTERN ]]; then
+        PINNED_ASSET="sd-master-${PINNED_COMMIT}-bin-Linux-Ubuntu-24.04-x86_64.zip"
+    fi
+    [ -n "$PINNED_ASSET" ] || return 1
+    printf 'https://github.com/leejet/stable-diffusion.cpp/releases/download/%s/%s' "$PINNED_RELEASE" "$PINNED_ASSET"
 }
 
 install_z_image_turbo() {
@@ -147,6 +193,45 @@ install_z_image_turbo() {
         "$MODEL_DIR/Qwen3-4B-Instruct-2507-Q4_K_M.gguf" "Qwen3 4B Q4_K_M text encoder" || return 1
 
     echo -e "${GREEN}[✓] Z-Image Turbo is ready. Generated images will be stored on this drive.${RESET}"
+}
+
+install_flux_schnell() {
+    local OS_TYPE="$1"
+    local ANSWER
+    echo -e "\n${PINK}─── [OPTIONAL FLUX.1 SCHNELL // IMAGE GENERATION] ─────────────────${RESET}"
+    echo -e "${CYAN}    Requires about 11 GB of downloads and 12 GB of free storage.${RESET}"
+    echo -ne "${ORANGE}[?] Install the FLUX.1 Schnell Q3_K_M model bundle? [y/N]: ${RESET}"
+    read -r ANSWER
+    [[ "$ANSWER" =~ ^[Yy]$ ]] || return 0
+
+    local MODEL_DIR="$USB_ROOT/models/image/flux1-schnell"
+    if [ ! -f "$MODEL_DIR/ae.safetensors" ] && [ -z "${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}" ]; then
+        echo -e "${ORANGE}[!] FLUX.1 Schnell requires access to its gated VAE on Hugging Face.${RESET}"
+        echo -e "${WHITE}    Accept the model terms, then set HF_TOKEN and rerun setup.${RESET}"
+        return 1
+    fi
+
+    local BIN_ROOT="$USB_ROOT/bin/linux-x64/image"
+    [ "$OS_TYPE" == "mac" ] && BIN_ROOT="$USB_ROOT/bin/mac-arm64/image"
+    if ! find "$BIN_ROOT" -type f -name 'sd-cli' -print -quit 2>/dev/null | grep -q .; then
+        echo -e "${ORANGE}[!] Install the native image engine from the Z-Image prompt first.${RESET}"
+        return 1
+    fi
+
+    download_setup_file \
+        "https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/flux1-schnell-Q3_K_M.gguf" \
+        "$MODEL_DIR/flux1-schnell-Q3_K_M.gguf" "FLUX.1 Schnell Q3_K_M diffusion model" || return 1
+    download_setup_file \
+        "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors" \
+        "$MODEL_DIR/ae.safetensors" "FLUX.1 VAE" || return 1
+    download_setup_file \
+        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors" \
+        "$MODEL_DIR/clip_l.safetensors" "FLUX CLIP-L text encoder" || return 1
+    download_setup_file \
+        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors" \
+        "$MODEL_DIR/t5xxl_fp8_e4m3fn.safetensors" "FLUX T5-XXL FP8 text encoder" || return 1
+
+    echo -e "${GREEN}[✓] FLUX.1 Schnell is ready and will appear in the Image model selector.${RESET}"
 }
 
 initialize_warstick_setup() {
@@ -230,8 +315,20 @@ initialize_warstick_setup() {
         echo -e "${GREEN}[✓] Discovered $MODEL_COUNT model(s) in registry.${RESET}"
     fi
 
-    install_z_image_turbo "$OS_TYPE" "$BACKEND_VARIANT"
+    local IMAGE_SETUP_FAILED=0
+    if ! install_z_image_turbo "$OS_TYPE" "$BACKEND_VARIANT"; then
+        echo -e "${ORANGE}[!] Z-Image Turbo setup did not complete; continuing to other image models.${RESET}"
+        IMAGE_SETUP_FAILED=1
+    fi
+    if ! install_flux_schnell "$OS_TYPE"; then
+        echo -e "${ORANGE}[!] FLUX.1 Schnell setup did not complete.${RESET}"
+        IMAGE_SETUP_FAILED=1
+    fi
 
-    echo -e "\n${GREEN}[✓] WarStick Neural Setup Complete!${RESET}"
+    if [ "$IMAGE_SETUP_FAILED" -eq 0 ]; then
+        echo -e "\n${GREEN}[✓] WarStick Neural Setup Complete!${RESET}"
+    else
+        echo -e "\n${ORANGE}[!] WarStick core setup completed, but one or more selected image components failed.${RESET}"
+    fi
     sleep 1.5
 }
