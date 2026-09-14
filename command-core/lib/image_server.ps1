@@ -16,38 +16,47 @@ if (-not (Test-Path -LiteralPath $ModelsDirectory -PathType Container)) { throw 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $models = @{}
-$zImageDirectory = Join-Path $ModelsDirectory 'z-image-turbo'
-$zImageVae = Join-Path $zImageDirectory 'ae.safetensors'
-$zImageLlm = Join-Path $zImageDirectory 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
-if ((Test-Path $zImageVae) -and (Test-Path $zImageLlm)) {
-    Get-ChildItem -LiteralPath $zImageDirectory -Filter 'z_image_turbo-*.gguf' -File -ErrorAction SilentlyContinue | ForEach-Object {
-        $models["z-image-turbo/$($_.Name)"] = @{
-            Label = "Z-Image Turbo / $($_.Name)"
-            Arguments = @('--diffusion-model', $_.FullName, '--vae', $zImageVae, '--llm', $zImageLlm)
-            Steps = 8
+$defaultModel = $null
+
+function Update-ImageModels {
+    $script:models = @{}
+    $zImageDirectory = Join-Path $ModelsDirectory 'z-image-turbo'
+    $zImageVae = Join-Path $zImageDirectory 'ae.safetensors'
+    $zImageLlm = Join-Path $zImageDirectory 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
+    if ((Test-Path $zImageVae) -and (Test-Path $zImageLlm)) {
+        Get-ChildItem -LiteralPath $zImageDirectory -Filter 'z_image_turbo-*.gguf' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $script:models["z-image-turbo/$($_.Name)"] = @{
+                Label = "Z-Image Turbo / $($_.Name)"
+                Arguments = @('--diffusion-model', $_.FullName, '--vae', $zImageVae, '--llm', $zImageLlm)
+                Steps = 8
+            }
         }
     }
+
+    $fluxDirectory = Join-Path $ModelsDirectory 'flux1-schnell'
+    $fluxVae = Join-Path $fluxDirectory 'ae.safetensors'
+    $fluxClip = Join-Path $fluxDirectory 'clip_l.safetensors'
+    $fluxT5 = Join-Path $fluxDirectory 't5xxl_fp16.safetensors'
+    if ((Test-Path $fluxVae) -and (Test-Path $fluxClip) -and (Test-Path $fluxT5)) {
+        Get-ChildItem -LiteralPath $fluxDirectory -Filter 'flux1-schnell-*.gguf' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $script:models["flux1-schnell/$($_.Name)"] = @{
+                Label = "FLUX.1 Schnell / $($_.Name)"
+                Arguments = @(
+                    '--diffusion-model', $_.FullName, '--vae', $fluxVae,
+                    '--clip_l', $fluxClip, '--t5xxl', $fluxT5,
+                    '--sampling-method', 'euler', '--clip-on-cpu',
+                    '--params-backend', 'te=disk', '--guidance', '0'
+                )
+                Steps = 4
+            }
+        }
+    }
+
+    if ($script:models.Count -eq 0) { throw "No complete image model bundles found below $ModelsDirectory" }
+    $script:defaultModel = @($script:models.Keys | Sort-Object { if ($_ -like 'z-image-turbo/*') { 0 } else { 1 } }, { $_ })[0]
 }
 
-$fluxDirectory = Join-Path $ModelsDirectory 'flux1-schnell'
-$fluxVae = Join-Path $fluxDirectory 'ae.safetensors'
-$fluxClip = Join-Path $fluxDirectory 'clip_l.safetensors'
-$fluxT5 = Join-Path $fluxDirectory 't5xxl_fp8_e4m3fn.safetensors'
-if ((Test-Path $fluxVae) -and (Test-Path $fluxClip) -and (Test-Path $fluxT5)) {
-    Get-ChildItem -LiteralPath $fluxDirectory -Filter 'flux1-schnell-*.gguf' -File -ErrorAction SilentlyContinue | ForEach-Object {
-        $models["flux1-schnell/$($_.Name)"] = @{
-            Label = "FLUX.1 Schnell / $($_.Name)"
-            Arguments = @(
-                '--diffusion-model', $_.FullName, '--vae', $fluxVae,
-                '--clip_l', $fluxClip, '--t5xxl', $fluxT5,
-                '--sampling-method', 'euler', '--clip-on-cpu'
-            )
-            Steps = 4
-        }
-    }
-}
-if ($models.Count -eq 0) { throw "No complete image model bundles found below $ModelsDirectory" }
-$defaultModel = @($models.Keys | Sort-Object { if ($_ -like 'z-image-turbo/*') { 0 } else { 1 } }, { $_ })[0]
+Update-ImageModels
 
 function Read-HttpLine($Stream) {
     $bytes = New-Object System.Collections.Generic.List[byte]
@@ -98,6 +107,7 @@ function Get-BoundedInteger($Value, [int]$Default, [int]$Minimum, [int]$Maximum,
 }
 
 function Invoke-ImageGeneration($Payload) {
+    Update-ImageModels
     if ($Payload.prompt -isnot [string] -or [string]::IsNullOrWhiteSpace($Payload.prompt) -or $utf8.GetByteCount($Payload.prompt) -gt 8KB) {
         throw 'Prompt must be a non-empty string no larger than 8 KB.'
     }
@@ -123,12 +133,16 @@ function Invoke-ImageGeneration($Payload) {
         '--height', [string]$height,
         '--seed', [string]$seed,
         '--output', $outputPath,
-        '--diffusion-fa'
+        '--diffusion-fa',
+        '--vae-tiling'
     )
     if ($Payload.offloadToCpu -eq $true) { $arguments += '--offload-to-cpu' }
 
     $log = (& $SdBinary @arguments 2>&1 | Out-String)
     $exitCode = $LASTEXITCODE
+    if ($log -match 't5xxl (?:text encoder not found|from .* failed)') {
+        throw 'Image generation failed: FLUX text encoder could not be loaded.'
+    }
     if ($exitCode -ne 0 -or -not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
         if ($log.Length -gt 2000) { $log = $log.Substring($log.Length - 2000) }
         throw "Image generation failed (exit $exitCode): $log"
@@ -163,6 +177,7 @@ try {
                 continue
             }
             if ($method -eq 'GET' -and $path -eq '/models') {
+                Update-ImageModels
                 $availableModels = @($models.Keys | Sort-Object | ForEach-Object {
                     @{ id = $_; label = $models[$_].Label; steps = $models[$_].Steps }
                 })

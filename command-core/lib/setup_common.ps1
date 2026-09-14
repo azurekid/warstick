@@ -130,7 +130,7 @@ function Install-ZImageTurbo([string]$BackendVariant) {
 
 function Install-FluxSchnell {
     Write-Host "`n$PINK─── [OPTIONAL FLUX.1 SCHNELL // IMAGE GENERATION] ─────────────────$RESET"
-    Write-Host "$CYAN    Requires about 11 GB of downloads and 12 GB of free storage.$RESET"
+    Write-Host "$CYAN    Requires about 16 GB of downloads and 17 GB of free storage.$RESET"
     $answer = Read-Host "$ORANGE[?] Install the FLUX.1 Schnell Q3_K_M model bundle? [y/N]$RESET"
     if ($answer -notmatch '^[Yy]$') { return }
 
@@ -152,7 +152,7 @@ function Install-FluxSchnell {
         @('https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/flux1-schnell-Q3_K_M.gguf', (Join-Path $modelDir 'flux1-schnell-Q3_K_M.gguf'), 'FLUX.1 Schnell Q3_K_M diffusion model'),
         @('https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors', (Join-Path $modelDir 'ae.safetensors'), 'FLUX.1 VAE'),
         @('https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors', (Join-Path $modelDir 'clip_l.safetensors'), 'FLUX CLIP-L text encoder'),
-        @('https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors', (Join-Path $modelDir 't5xxl_fp8_e4m3fn.safetensors'), 'FLUX T5-XXL FP8 text encoder')
+        @('https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors', (Join-Path $modelDir 't5xxl_fp16.safetensors'), 'FLUX T5-XXL FP16 text encoder')
     )
     foreach ($download in $downloads) {
         if (-not (Save-SetupDownload $download[0] $download[1] $download[2])) { return }
@@ -162,7 +162,7 @@ function Install-FluxSchnell {
 
 function Initialize-WarStickSetup {
     Draw-Banner
-    Write-Host "$PINK─── [WARSTICK SETUP MATRIX // UNCENSORED STUDIO ENGINE] ────────────$RESET`n"
+    Write-Host "$PINK─── [WARSTICK SETUP] ────────────$RESET`n"
 
     $backendVariant = Get-RecommendedBackendVariant
     $destDir = Join-Path $USB_ROOT "bin\win-x64"

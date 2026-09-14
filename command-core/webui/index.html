@@ -367,7 +367,7 @@
       <div class="telemetry" aria-live="polite">
         <div class="telemetry-row"><span>ENGINE</span><strong id="status" class="status">CONNECTING</strong></div>
         <div class="telemetry-row"><span>MODEL</span><strong id="model">DISCOVERING</strong></div>
-        <div class="telemetry-row"><span>PORT</span><strong>9931</strong></div>
+        <div class="telemetry-row"><span>PORT</span><strong id="port">9931</strong></div>
       </div>
     </header>
 
@@ -403,9 +403,9 @@
           </label>
           <label>SIZE
             <select id="image-size">
-              <option value="512x512">512 x 512</option>
+              <option value="512x512" selected>512 x 512</option>
               <option value="768x768">768 x 768</option>
-              <option value="1024x1024" selected>1024 x 1024</option>
+              <option value="1024x1024">1024 x 1024</option>
               <option value="1024x576">1024 x 576</option>
             </select>
           </label>
@@ -437,6 +437,7 @@
     const warModeToggle = document.querySelector("#war-mode");
     const status = document.querySelector("#status");
     const modelName = document.querySelector("#model");
+    const portNumber = document.querySelector("#port");
 
     const standardPrompt = "Always respond in English. Keep code, commands, file paths, and other technical literals unchanged.";
     const warModePrompt = `${standardPrompt} War Mode is active: be concise, mission-focused, and prioritize actionable defensive security guidance, risk assessment, and clear next steps.`;
@@ -469,6 +470,7 @@
       imageOptions.hidden = !imageMode;
       prompt.placeholder = imageMode ? "Describe an image..." : "Enter objective...";
       send.textContent = imageMode ? "Create" : "Send";
+      portNumber.textContent = imageMode ? "9933" : "9931";
       modelName.textContent = imageMode ? imageModel.value || "Z-IMAGE TURBO" : modelName.dataset.chatModel || modelName.textContent;
       checkActiveEngine();
       prompt.focus();

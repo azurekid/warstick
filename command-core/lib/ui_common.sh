@@ -643,9 +643,24 @@ stop_history_server() {
 }
 
 start_image_server() {
-    if curl -fsS -m 1 "http://127.0.0.1:9933/health" >/dev/null 2>&1; then
+    if curl -fsS -m 1 "http://127.0.0.1:9933/models" 2>/dev/null | grep -q '"models"'; then
         echo -e "${GREEN}[✓] Image generation service is online on Port 9933.${RESET}"
         return 0
+    fi
+
+    if curl -fsS -m 1 "http://127.0.0.1:9933/health" >/dev/null 2>&1; then
+        local IMAGE_SCRIPT="$USB_ROOT/command-core/lib/image_server.pl"
+        local LISTENER_PID=""
+        command -v lsof >/dev/null 2>&1 && LISTENER_PID=$(lsof -tiTCP:9933 -sTCP:LISTEN 2>/dev/null | head -n 1)
+        if [ -n "$LISTENER_PID" ] && [[ "$(ps -p "$LISTENER_PID" -o command= 2>/dev/null)" == *"$IMAGE_SCRIPT"* ]]; then
+            echo -e "${ORANGE}[*] Replacing an outdated WarStick image service on Port 9933.${RESET}"
+            kill "$LISTENER_PID" 2>/dev/null || true
+            wait "$LISTENER_PID" 2>/dev/null || true
+        else
+            echo -e "${RED}[!] Port 9933 is occupied by an incompatible image service.${RESET}"
+            echo -e "${ORANGE}    Stop the other service, then restart WarStick.${RESET}"
+            return 1
+        fi
     fi
     if ! command -v perl >/dev/null 2>&1; then
         return 1
@@ -671,7 +686,7 @@ start_image_server() {
 
     local ATTEMPT
     for ATTEMPT in {1..20}; do
-        if curl -fsS -m 1 "http://127.0.0.1:9933/health" >/dev/null 2>&1; then
+        if curl -fsS -m 1 "http://127.0.0.1:9933/models" 2>/dev/null | grep -q '"models"'; then
             echo -e "${GREEN}[✓] Image generation service is online on Port 9933.${RESET}"
             return 0
         fi

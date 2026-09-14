@@ -49,16 +49,23 @@ download_setup_file() {
     mkdir -p "$(dirname "$TARGET_PATH")"
     echo -e "${CYAN}[>>] Downloading $LABEL...${RESET}"
     local -a CURL_HEADERS=()
+    local -a CURL_TRANSPORT_ARGS=(--retry 5 --retry-delay 2 --retry-all-errors --continue-at -)
     local HF_ACCESS_TOKEN="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
     if [[ "$URL" == https://huggingface.co/* ]] && [ -n "$HF_ACCESS_TOKEN" ]; then
         CURL_HEADERS=(-H "Authorization: Bearer $HF_ACCESS_TOKEN")
     fi
-    if curl -fL --progress-bar "${CURL_HEADERS[@]}" "$URL" -o "$TARGET_PATH.part"; then
+    if [[ "$URL" == https://huggingface.co/* ]]; then
+        CURL_TRANSPORT_ARGS+=(--http1.1)
+    fi
+    if [ -s "$TARGET_PATH.part" ]; then
+        echo -e "${CYAN}[>>] Resuming $LABEL from $(du -h "$TARGET_PATH.part" | cut -f1).${RESET}"
+    fi
+    if curl -fL --progress-bar "${CURL_TRANSPORT_ARGS[@]}" "${CURL_HEADERS[@]}" "$URL" -o "$TARGET_PATH.part"; then
         mv -f "$TARGET_PATH.part" "$TARGET_PATH"
         return 0
     fi
-    rm -f "$TARGET_PATH.part"
     echo -e "${RED}[!] Download failed: $URL${RESET}"
+    echo -e "${ORANGE}    Partial data was kept and will resume the next time setup runs.${RESET}"
     return 1
 }
 
@@ -199,7 +206,7 @@ install_flux_schnell() {
     local OS_TYPE="$1"
     local ANSWER
     echo -e "\n${PINK}─── [OPTIONAL FLUX.1 SCHNELL // IMAGE GENERATION] ─────────────────${RESET}"
-    echo -e "${CYAN}    Requires about 11 GB of downloads and 12 GB of free storage.${RESET}"
+    echo -e "${CYAN}    Requires about 16 GB of downloads and 17 GB of free storage.${RESET}"
     echo -ne "${ORANGE}[?] Install the FLUX.1 Schnell Q3_K_M model bundle? [y/N]: ${RESET}"
     read -r ANSWER
     [[ "$ANSWER" =~ ^[Yy]$ ]] || return 0
@@ -207,8 +214,18 @@ install_flux_schnell() {
     local MODEL_DIR="$USB_ROOT/models/image/flux1-schnell"
     if [ ! -f "$MODEL_DIR/ae.safetensors" ] && [ -z "${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}" ]; then
         echo -e "${ORANGE}[!] FLUX.1 Schnell requires access to its gated VAE on Hugging Face.${RESET}"
-        echo -e "${WHITE}    Accept the model terms, then set HF_TOKEN and rerun setup.${RESET}"
-        return 1
+        echo -e "${WHITE}    Accept the terms at:${RESET} ${CYAN}https://huggingface.co/black-forest-labs/FLUX.1-schnell${RESET}"
+        echo -e "${WHITE}    Create a read token at:${RESET} ${CYAN}https://huggingface.co/settings/tokens${RESET}"
+        if [ -t 0 ]; then
+            echo -ne "${ORANGE}[?] Hugging Face token (input hidden): ${RESET}"
+            IFS= read -r -s HF_TOKEN
+            echo
+            export HF_TOKEN
+        fi
+        if [ -z "${HF_TOKEN:-}" ]; then
+            echo -e "${RED}[!] A Hugging Face token is required to install FLUX.1 Schnell.${RESET}"
+            return 1
+        fi
     fi
 
     local BIN_ROOT="$USB_ROOT/bin/linux-x64/image"
@@ -219,24 +236,24 @@ install_flux_schnell() {
     fi
 
     download_setup_file \
-        "https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/flux1-schnell-Q3_K_M.gguf" \
-        "$MODEL_DIR/flux1-schnell-Q3_K_M.gguf" "FLUX.1 Schnell Q3_K_M diffusion model" || return 1
-    download_setup_file \
         "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors" \
         "$MODEL_DIR/ae.safetensors" "FLUX.1 VAE" || return 1
+    download_setup_file \
+        "https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/flux1-schnell-Q3_K_M.gguf" \
+        "$MODEL_DIR/flux1-schnell-Q3_K_M.gguf" "FLUX.1 Schnell Q3_K_M diffusion model" || return 1
     download_setup_file \
         "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors" \
         "$MODEL_DIR/clip_l.safetensors" "FLUX CLIP-L text encoder" || return 1
     download_setup_file \
-        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors" \
-        "$MODEL_DIR/t5xxl_fp8_e4m3fn.safetensors" "FLUX T5-XXL FP8 text encoder" || return 1
+        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors" \
+        "$MODEL_DIR/t5xxl_fp16.safetensors" "FLUX T5-XXL FP16 text encoder" || return 1
 
     echo -e "${GREEN}[✓] FLUX.1 Schnell is ready and will appear in the Image model selector.${RESET}"
 }
 
 initialize_warstick_setup() {
     draw_banner
-    echo -e "${PINK}─── [WARSTICK SETUP MATRIX // UNCENSORED STUDIO ENGINE] ────────────${RESET}\n"
+    echo -e "${PINK}─── [WARSTICK SETUP ] ────────────${RESET}\n"
 
     local OS_TYPE="mac"
     if [[ "$(uname -s)" == "Linux" ]]; then
@@ -299,7 +316,7 @@ initialize_warstick_setup() {
     local DISCOVERED_MODELS
     DISCOVERED_MODELS=$(get_discovered_models)
     if [ -z "$DISCOVERED_MODELS" ]; then
-        echo -e "\n${PINK}[*] No GGUF models discovered in USB or Uncensored AI Studio paths.${RESET}"
+        echo -e "\n${PINK}[*] No GGUF models discovered.${RESET}"
         echo -e "${CYAN}[>>] Downloading starter Qwen2.5-Coder model (491 MB)...${RESET}"
         mkdir -p "$USB_ROOT/models"
         local MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
