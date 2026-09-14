@@ -1,0 +1,10 @@
+# ─── WARSTICK CUSTOM OFFENSIVE SKILLS REGISTRY ─────────────────
+# Format: [Skill Name] | <Description / Triggers> | <Default Command> | <Platform: all/mac/linux/win>
+# Use [ARG] or <TARGET> as variable placeholder if the skill requires dynamic input.
+
+[External IP & Geo Location] | Get public IP, ISP org, and geolocation data | curl -s https://ipinfo.io | grep -E "ip|org|city|region|country" | all
+[DNS Recon via Cloudflare] | Query public DNS over HTTPS for domain records | curl -s "https://cloudflare-dns.com/dns-query?name=[ARG]&type=ANY" -H "accept: application/dns-json" | all
+[Reverse IP Lookup] | Find other domains hosted on a target IP via HackerTarget | curl -s "https://api.hackertarget.com/reverseiplookup/?q=[ARG]" | all
+[HTTP Security Headers Check] | Inspect remote server response headers & CSP | curl -s -I -L "[ARG]" | all
+[Local Listening Ports] | Scan active listeners on macOS/Linux | lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || netstat -ant | grep -i listen | all
+[Public Shodan Host Recon] | Query host internet exposure via internetdb | curl -s "https://internetdb.shodan.io/[ARG]" | all

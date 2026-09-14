@@ -1,7 +1,7 @@
 #!/bin/bash
-#  CENTRALIZED UI & OPERATIONAL LIBRARY (WARSTICK COMMAND CONSOLE)
+# ─── CENTRALIZED UI & OPERATIONAL LIBRARY (WARSTICK COMMAND CONSOLE) ───
 
-#  MIAMI VICE / VAPORWAVE ANSI COLOR CODES
+# ─── MIAMI VICE / VAPORWAVE ANSI COLOR CODES ────────────────────
 export NEON_PINK="\033[38;5;213m"
 export PINK="\033[38;5;205m"     # Neon Magenta / Sunset Pink
 export ORANGE="\033[38;5;214m"   # Sunset Orange
@@ -16,7 +16,7 @@ export RED="\033[38;5;196m"      # Bright Red
 export BOLD="\033[1m"
 export RESET="\033[0m"
 
-#  BANNER RENDERER 
+# ─── BANNER RENDERER ────────────────────────────────────────────
 draw_banner() {
     clear
     local BANNER_FILE="$USB_ROOT/agent/banner.txt"
@@ -47,7 +47,7 @@ draw_banner() {
     echo -e "${RESET}"
 }
 
-# LOAD CENTRAL PHRASES
+# ─── LOAD CENTRAL PHRASES ───────────────────────────────────────
 get_phrases() {
     local PHRASES_FILE="$USB_ROOT/agent/phrases.txt"
     if [ -f "$PHRASES_FILE" ]; then
@@ -68,7 +68,7 @@ get_phrases() {
     fi
 }
 
-# ACTIVE MODEL MANAGEMENT
+# ─── ACTIVE MODEL MANAGEMENT ─────────────────────────────────────
 get_active_model() {
     local MODEL_CONF="$USB_ROOT/agent/active_model.txt"
     local SELECTED_MODEL=""
@@ -110,7 +110,7 @@ select_model_menu() {
     done
 
     if [ ${#MODELS[@]} -eq 0 ]; then
-        echo -e "${RED}[!] No .gguf models discovered inside /models directory.${RESET}"
+        echo -e "${RED}[!] No .gguf models discovered inside USB /models directory.${RESET}"
         echo -n "Press [Enter] to return..."
         read
         return
@@ -131,7 +131,7 @@ select_model_menu() {
     fi
 }
 
-# CUSTOM SKILL / TOOL REGISTRY MANAGEMENT
+# ─── CUSTOM SKILL / TOOL REGISTRY MANAGEMENT ─────────────────────
 get_skills_manifest() {
     local SKILLS_DIR="$USB_ROOT/agent/skills"
     local MANIFEST=""
@@ -379,7 +379,7 @@ EOF
     done
 }
 
-# ─── ENGINE LIFECYCLE CONTROLLERS
+# ─── ENGINE LIFECYCLE CONTROLLERS ────────────────────────────────
 wait_for_server() {
     local PORT=${1:-9931}
     local MAX_WAIT=${2:-30}
@@ -411,59 +411,10 @@ stop_engine() {
     sleep 0.5
 }
 
-# Ensure Linux shared objects are real files (FAT/exFAT USB copies drop symlinks).
-ensure_linux_runtime_libs() {
-    local BIN_DIR="$1"
-    local REAL_CPU=""
-    local candidate
-
-    [ -d "$BIN_DIR" ] || return 1
-
-    for candidate in \
-        "$BIN_DIR/libggml-cpu.so.0.23.0" \
-        "$BIN_DIR/libggml-cpu.so.0" \
-        "$BIN_DIR/libggml-cpu.so"
-    do
-        if [ -f "$candidate" ] && [ ! -L "$candidate" ]; then
-            REAL_CPU="$candidate"
-            break
-        fi
-    done
-
-    if [ -z "$REAL_CPU" ]; then
-        echo -e "${RED}[!] Missing Linux CPU backend library in $BIN_DIR${RESET}"
-        echo -e "${ORANGE}    Expected one of: libggml-cpu.so.0.23.0, libggml-cpu.so.0, libggml-cpu.so${RESET}"
-        return 1
-    fi
-
-    # Materialize SONAME aliases as hard copies so noexec/FAT USB media still works.
-    for candidate in \
-        "$BIN_DIR/libggml-cpu.so.0" \
-        "$BIN_DIR/libggml-cpu.so"
-    do
-        if [ ! -f "$candidate" ] || [ -L "$candidate" ]; then
-            cp -f "$REAL_CPU" "$candidate" 2>/dev/null || true
-        fi
-    done
-
-    # Best-effort execute bits (ignored on some FAT mounts).
-    chmod +x "$BIN_DIR/llama-server" "$BIN_DIR"/*.so* 2>/dev/null || true
-    return 0
-}
-
 start_engine() {
     local OS_TYPE="$1" # mac or linux
-    local ACTIVE_MODEL
-    local MODEL_PATH
-    local BIN_DIR
-    local SERVER_BIN
-    local SERVER_LOG
-    local LAUNCH_ENV=()
-
-    ACTIVE_MODEL=$(get_active_model)
-    MODEL_PATH="$USB_ROOT/models/$ACTIVE_MODEL"
-    SERVER_LOG="$USB_ROOT/agent/logs/llama-server.log"
-    mkdir -p "$USB_ROOT/agent/logs"
+    local ACTIVE_MODEL=$(get_active_model)
+    local MODEL_PATH="$USB_ROOT/models/$ACTIVE_MODEL"
 
     if [ ! -f "$MODEL_PATH" ]; then
         echo -e "${RED}[!] Error: Model not found: $MODEL_PATH${RESET}"
@@ -471,59 +422,19 @@ start_engine() {
     fi
 
     stop_engine
-    : > "$SERVER_LOG"
 
     if [ "$OS_TYPE" == "mac" ]; then
-        BIN_DIR="$USB_ROOT/bin/mac-arm64"
-        SERVER_BIN="$BIN_DIR/llama-server"
-        xattr -cr "$BIN_DIR" 2>/dev/null
-        chmod +x "$SERVER_BIN" 2>/dev/null
+        xattr -cr "$USB_ROOT/bin/mac-arm64" 2>/dev/null
+        chmod +x "$USB_ROOT/bin/mac-arm64/llama-server" 2>/dev/null
+        "$USB_ROOT/bin/mac-arm64/llama-server" -m "$MODEL_PATH" -c 4096 --host 0.0.0.0 --port 9931 --path "$USB_ROOT/agent/webui" > /dev/null 2>&1 &
+        SERVER_PID=$!
     else
-        BIN_DIR="$USB_ROOT/bin/linux-x64"
-        SERVER_BIN="$BIN_DIR/llama-server"
-
-        if ! ensure_linux_runtime_libs "$BIN_DIR"; then
-            return 1
-        fi
-
-        if [ ! -f "$SERVER_BIN" ]; then
-            echo -e "${RED}[!] Missing Linux engine binary: $SERVER_BIN${RESET}"
-            return 1
-        fi
-
-        # Force local bundled libs first. Critical when copied to USB and when
-        # ELF RUNPATH was previously baked to a build temp path.
-        export LD_LIBRARY_PATH="$BIN_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-        LAUNCH_ENV=(env "LD_LIBRARY_PATH=$LD_LIBRARY_PATH")
+        chmod +x "$USB_ROOT/bin/linux-x64/llama-server" 2>/dev/null
+        "$USB_ROOT/bin/linux-x64/llama-server" -m "$MODEL_PATH" -c 4096 --host 0.0.0.0 --port 9931 --path "$USB_ROOT/agent/webui" > /dev/null 2>&1 &
+        SERVER_PID=$!
     fi
 
-    if [ ! -x "$SERVER_BIN" ] && [ ! -f "$SERVER_BIN" ]; then
-        echo -e "${RED}[!] Engine binary not executable: $SERVER_BIN${RESET}"
-        return 1
-    fi
-
-    # Keep stderr so USB/noexec/missing-lib failures are diagnosable.
-    "${LAUNCH_ENV[@]}" "$SERVER_BIN" \
-        -m "$MODEL_PATH" \
-        -c 4096 \
-        --host 0.0.0.0 \
-        --port 9931 \
-        --path "$USB_ROOT/agent/webui" \
-        >"$SERVER_LOG" 2>&1 &
-    SERVER_PID=$!
-
-    if ! wait_for_server 9931 35; then
-        echo -e "${RED}[!] Neural engine failed to become ready on port 9931.${RESET}"
-        if [ -s "$SERVER_LOG" ]; then
-            echo -e "${ORANGE}─── last engine log lines ─────────────────────────────${RESET}"
-            tail -n 20 "$SERVER_LOG" 2>/dev/null
-            echo -e "${ORANGE}───────────────────────────────────────────────────────${RESET}"
-            echo -e "${CYAN}Full log: $SERVER_LOG${RESET}"
-        else
-            echo -e "${ORANGE}[!] No engine log written. Check USB mount options (noexec) and library copy.${RESET}"
-        fi
-        return 1
-    fi
+    wait_for_server 9931 35
 }
 
 restart_engine() {
@@ -534,7 +445,7 @@ restart_engine() {
     start_engine "$OS_NAME"
 }
 
-# REAL-TIME ASYNC SPINNER & REQUEST RUNNER
+# ─── REAL-TIME ASYNC SPINNER & REQUEST RUNNER ───────────────────
 query_llm_with_live_animation() {
     local PAYLOAD="$1"
     mkdir -p "$USB_ROOT/agent/logs"
@@ -600,7 +511,7 @@ query_llm_with_live_animation() {
     fi
 }
 
-#  GENERATED COMMAND VALIDATION
+# ─── GENERATED COMMAND VALIDATION ──────────────────────────────
 validate_shell_command() {
     local command_text="$1"
 
@@ -612,106 +523,118 @@ validate_shell_command() {
     bash -n -c "$command_text" >/dev/null 2>&1
 }
 
-#  RESPONSE JSON PARSER & REFUSAL DETECTOR
+# ─── RESPONSE JSON PARSER & REFUSAL DETECTOR ───────────────────
 clean_json_command() {
     local raw_input="$1"
-    local content=""
-    local final_cmd=""
+    local cleaned=""
 
-    # 1. Extract JSON content field (try multiple patterns for robustness)
-    # Handle both escaped and unescaped quotes
-    content=$(echo "$raw_input" | sed -n 's/.*"content":"//p' | sed 's/"}.*//' | head -1)
-    
-    # If that didn't work, try extracting reasoning_content
-    if [ -z "$content" ]; then
-        content=$(echo "$raw_input" | sed -n 's/.*"reasoning_content":"//p' | sed 's/"}.*//' | head -1)
-    fi
-    
-    # If still empty, try extracting from whole response
-    if [ -z "$content" ]; then
-        content="$raw_input"
-    fi
+    # Try precise Python JSON parsing and reasoning extraction
+    if command -v python3 >/dev/null 2>&1; then
+        cleaned=$(echo "$raw_input" | python3 -c '
+import sys, json, re
 
-    # Convert escaped newlines to actual newlines for processing
-    content=$(echo -e "$content")
+raw = sys.stdin.read().strip()
+if not raw:
+    sys.exit(0)
 
-    # 2. Remove XML/think tags using sed
-    content=$(echo "$content" | sed -e 's/<think>.*<\/think>//g' -e 's/<thought>.*<\/thought>//g' -e 's/\[INST\]//g' -e 's/\[\/INST\]//g')
+try:
+    data = json.loads(raw)
+except Exception:
+    data = {}
 
-    # 3. Extract markdown code blocks if present (prefer last block)
-    local code_block=$(echo "$content" | sed -n '/```/,/```/p' | grep -v '```' | tail -20)
-    if [ -n "$code_block" ]; then
-        content="$code_block"
-    fi
+content = ""
+reasoning = ""
 
-    # 4. Clean and filter lines - remove prose
-    # Loop through lines and find the best command candidate
-    local line
-    while IFS= read -r line; do
-        line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        
-        # Skip empty lines
-        [ -z "$line" ] && continue
-        
-        # Skip JSON structural artifacts
-        if echo "$line" | grep -qE '^\{|\}|^\[|\]|^"|^choices:|^data:'; then
-            continue
-        fi
-        
-        # Skip comments and markdown markers
-        if echo "$line" | grep -qE '^#|^```|^---|^==='; then
-            continue
-        fi
-        
-        # Skip very short lines (< 4 chars)
-        [ ${#line} -lt 4 ] && continue
-        
-        # Skip pure prose lines starting with common prose patterns
-        if echo "$line" | grep -iqE '^(We need|Lets|I will|The user|The |Firsts|Note:|Option|Step [0-9]|Here is|To accomplish|This command|According to|In order to|So |This |That |Now |Just |And |But |Or |Im|You can|More info|Output|Result|Results|It |He |She |They |What |When |Where |Why |How |The best|The most|The only|Heres|Thats)'; then
-            continue
-        fi
-        
-        # Skip lines that end with sentence-ending punctuation (likely prose)
-        if echo "$line" | grep -qE '\.$|^[A-Z][a-z]+(\s+[a-z]+)*\.$'; then
-            continue
-        fi
-        
-        # Skip if it looks like starting a number or is just capitalized prose
-        if echo "$line" | grep -qE '^[0-9]+\.|^[A-Z][a-z]+(\s+[a-z]+)*$'; then
-            continue
-        fi
-        
-        # If line has shell operators or looks like a command, accept it
-        if echo "$line" | grep -qE '[/\-|><&$*\(\)\[\]`"\047]'; then
-            # Reject if it ends with punctuation
-            if ! echo "$line" | grep -qE '\.|!|\?$'; then
-                final_cmd="$line"
-                break
-            fi
-        fi
-    done <<< "$content"
+if isinstance(data, dict):
+    choices = data.get("choices", [])
+    if choices and isinstance(choices, list):
+        msg = choices[0].get("message", {})
+        content = (msg.get("content") or "").strip()
+        reasoning = (msg.get("reasoning_content") or "").strip()
 
-    # 5. Fallback: if no good command found, try to extract from any remaining content
-    if [ -z "$final_cmd" ]; then
-        final_cmd=$(echo "$content" | tail -5 | grep -v '^[A-Z][a-z]*' | tail -1)
-    fi
+# If content is empty but model put reasoning tokens, extract from reasoning
+if not content and reasoning:
+    content = reasoning
+elif not content:
+    content = raw
 
-    # 6. Clean up the command (remove backticks, escaped newlines, and leading shell prompt symbols like $, #, >, %)
-    final_cmd=$(echo "$final_cmd" | sed -e "s/^\`\`\`//g" -e "s/\`\`\`$//g" -e 's/\\n/ /g' -e 's/\\t/ /g' -e "s/\\\\//g" -e "s/^\`//g" -e "s/\`$//g" | sed -E 's/^[[:space:]]*[\$#>%][[:space:]]+//')
+# 1. Remove XML/think tags
+content = re.sub(r"<think>[\s\S]*?</think>", "", content, flags=re.DOTALL)
+content = re.sub(r"<thought>[\s\S]*?</thought>", "", content, flags=re.DOTALL)
+content = re.sub(r"\[/?INST\]", "", content)
 
-    # 7. Guard: never return raw JSON payload
-    if echo "$final_cmd" | grep -qE '^\{|^choices:|^\[\{'; then
-        final_cmd=""
+# 2. Extract markdown code block if present
+code_blocks = re.findall(r"```(?:bash|sh|zsh|powershell|cmd|batch)?\s*\n?([\s\S]*?)```", content)
+if code_blocks:
+    content = code_blocks[-1].strip()
+
+# 3. Clean and filter candidate command lines
+lines = [l.strip() for l in content.split("\n") if l.strip()]
+valid_lines = []
+for l in lines:
+    # Skip JSON structural artifacts and headers
+    if l.startswith(("{", "}", "[", "]", "\"", "choices:", "data:")):
+        continue
+    if l.startswith(("#", "```", "---", "===")):
+        continue
+    # Skip internal thinking/conversational prose
+    if re.match(r"^(We need|Let\x27s|I will|The user|First,|Note:|Option|Step \d|Here is|To accomplish|This command|According to|In order to)", l, re.IGNORECASE):
+        continue
+    valid_lines.append(l)
+
+final_cmd = ""
+if valid_lines:
+    # Pick the cleanest command line (prefer line without trailing punctuation)
+    for candidate in valid_lines:
+        if not candidate.endswith((".", "?", "!")) and not candidate.startswith("//"):
+            final_cmd = candidate
+            break
+    if not final_cmd:
+        final_cmd = valid_lines[0]
+elif lines:
+    final_cmd = lines[-1].strip("`")
+
+# Strip markdown backticks without removing command argument quotes
+final_cmd = final_cmd.strip("`").strip()
+final_cmd = re.sub(r"\\[nt]", " ", final_cmd)
+final_cmd = re.sub(r"\\+", "", final_cmd)
+
+# Guard against printing raw JSON objects
+if final_cmd.startswith(("{", "choices:", "[{")):
+    final_cmd = ""
+
+# Detect unpopulated placeholder templates (e.g. <target_ip>, <port>, <file_path>, [TARGET])
+# These cause shell syntax errors if executed directly via eval
+if re.search(r"<[a-zA-Z0-9_\-]+>|\[(?:target|ip|port|host|username|password|path|file)[^\]]*\]", final_cmd, re.IGNORECASE):
+    print("TEMPLATE: " + final_cmd)
+    sys.exit(0)
+
+print(final_cmd)
+' 2>/dev/null)
     fi
 
-    # 8. Detect unpopulated placeholder templates
-    if echo "$final_cmd" | grep -iqE '<[a-zA-Z0-9_\-]+>|\[(target|ip|port|host|username|password|path|file)'; then
-        echo "TEMPLATE: $final_cmd"
-    elif echo "$final_cmd" | grep -iqE 'cannot assist|sorry|illegal|unethical|certified security|as an ai|i am unable|as a language model|policy|disclaimer'; then
-        echo "REFUSAL: $final_cmd"
-    elif [ -z "$final_cmd" ]; then
+    # Fallback if Python is unavailable
+    if [ -z "$cleaned" ]; then
+        cleaned=$(echo "$raw_input" | grep -o '"content":"[^"]*' | sed 's/"content":"//')
+    fi
+    if [ -z "$cleaned" ]; then
+        cleaned=$(echo "$raw_input" | sed -n '/```/,/```/p' | grep -v '```')
+    fi
+    cleaned=$(echo "$cleaned" | tr -d '`' | sed 's/\\n/ /g' | sed 's/\\t/ /g' | sed 's/\\//g')
+
+    # Guard: never return raw JSON payload
+    if [[ "$cleaned" =~ ^\{.*\} || "$cleaned" =~ ^choices: || "$cleaned" =~ ^\[\{ ]]; then
+        cleaned=""
+    fi
+
+    # Detect unpopulated placeholder templates
+    if echo "$cleaned" | grep -iqE "<[a-zA-Z0-9_\-]+>|\[(target|ip|port|host|username|password|path|file)"; then
+        echo "TEMPLATE: $cleaned"
+    elif echo "$cleaned" | grep -iqE "cannot assist|sorry|illegal|unethical|certified security|as an ai|i am unable|as a language model|policy|disclaimer"; then
+        echo "REFUSAL: $cleaned"
+    elif [ -z "$cleaned" ]; then
         echo "ERROR: Model did not produce a clean executable command."
     else
-        echo "$final_cmd"
+        echo "$cleaned"
     fi
 }

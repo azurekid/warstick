@@ -1,0 +1,4 @@
+[1] Host Recon: Enumerate local network configurations, active connections, routing tables, and check for open port listeners on 22 or 445.
+[2] PrivEsc Audit: Enumerate environment variables, user group memberships, and list running processes executing under an elevated security context.
+[3] Security Audit: Query host native firewall status, check active rule exclusions, and determine system update/patch history metadata.
+[4] Persistence Check: List scheduled background tasks and services configured to start automatically at system boot.

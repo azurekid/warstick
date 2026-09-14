@@ -1,3 +1,10 @@
-logs/
-*.md
+warstick*
+*gguf
+._*
+/bin/
+/bin/linux-x64/**.*
+/bin/mac-arm64/
+/bin/win*/
+history*
+last_response*
 models/
