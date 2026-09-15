@@ -1,7 +1,20 @@
-*log*
-._*
+# Downloaded binaries and models
 /bin/
-history*
-last_response*
-models/
-generated*/
+/models/**
+!/models/README.md
+*.part
+
+# Generated images and runtime logs
+/generated-images/
+/warstick-logs/
+*.log
+
+# Local runtime state
+**/chat_history.json
+**/last_response.json
+
+# macOS and editor metadata
+.DS_Store
+._*
+.vscode/
+.idea/
