@@ -798,7 +798,9 @@ start_engine() {
     ACTIVE_LLM_PORT="$TARGET_PORT"
 
     "${LAUNCH_ENV[@]}" "$SERVER_BIN" \
-        -m "$MODEL_PATH" \
+        --models-dir "$USB_ROOT/models" \
+        --models-max 1 \
+        --models-autoload \
         -c 4096 \
         --host 0.0.0.0 \
         --port "$TARGET_PORT" \
