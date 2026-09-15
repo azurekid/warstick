@@ -45,19 +45,82 @@ function Save-SetupDownload([string]$Url, [string]$TargetPath, [string]$Label) {
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
     $partialPath = "$TargetPath.part"
     Write-Host "$CYAN[>>] Downloading $Label...$RESET"
+    $httpClient = $null
+    $response = $null
+    $responseStream = $null
+    $fileStream = $null
     try {
-        $headers = @{}
         $hfAccessToken = if ($env:HF_TOKEN) { $env:HF_TOKEN } else { $env:HUGGING_FACE_HUB_TOKEN }
+        $handler = [System.Net.Http.HttpClientHandler]::new()
+        $handler.AllowAutoRedirect = $true
+        $handler.SslProtocols = [System.Security.Authentication.SslProtocols]::Tls12
+        $httpClient = [System.Net.Http.HttpClient]::new($handler)
+        $httpClient.Timeout = [TimeSpan]::FromHours(12)
+        $httpClient.DefaultRequestHeaders.UserAgent.ParseAdd('WarStick-Setup/1.0')
+
+        $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $Url)
+        $request.Version = [Version]'1.1'
         if ($Url.StartsWith('https://huggingface.co/') -and $hfAccessToken) {
-            $headers.Authorization = "Bearer $hfAccessToken"
+            $request.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $hfAccessToken)
         }
-        Invoke-WebRequest -Uri $Url -OutFile $partialPath -Headers $headers -UseBasicParsing
+
+        $existingBytes = if (Test-Path -LiteralPath $partialPath -PathType Leaf) {
+            (Get-Item -LiteralPath $partialPath).Length
+        } else { 0 }
+        if ($existingBytes -gt 0) {
+            $request.Headers.Range = [System.Net.Http.Headers.RangeHeaderValue]::new($existingBytes, $null)
+            Write-Host "$CYAN[>>] Resuming $Label from $existingBytes bytes.$RESET"
+        }
+
+        $response = $httpClient.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        if ($existingBytes -gt 0 -and $response.StatusCode -eq [System.Net.HttpStatusCode]::RequestedRangeNotSatisfiable) {
+            Remove-Item -LiteralPath $partialPath -Force
+            $request.Dispose()
+            $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $Url)
+            $request.Version = [Version]'1.1'
+            if ($Url.StartsWith('https://huggingface.co/') -and $hfAccessToken) {
+                $request.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $hfAccessToken)
+            }
+            $response.Dispose()
+            $response = $httpClient.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+            $existingBytes = 0
+        }
+        $response.EnsureSuccessStatusCode()
+        $append = $existingBytes -gt 0 -and $response.StatusCode -eq [System.Net.HttpStatusCode]::PartialContent
+        if (-not $append) { $existingBytes = 0 }
+        $responseStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $fileMode = if ($append) { [System.IO.FileMode]::Append } else { [System.IO.FileMode]::Create }
+        $fileStream = [System.IO.File]::Open($partialPath, $fileMode, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        $buffer = New-Object byte[] (1MB)
+        while (($read = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $fileStream.Write($buffer, 0, $read)
+        }
+        $fileStream.Flush()
+        $fileStream.Dispose()
+        $fileStream = $null
+        $responseStream.Dispose()
+        $responseStream = $null
         Move-Item -LiteralPath $partialPath -Destination $TargetPath -Force
         return $true
     } catch {
-        Remove-Item -LiteralPath $partialPath -Force -ErrorAction SilentlyContinue
+        if (-not $hfAccessToken -and (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue)) {
+            try {
+                Write-Host "$CYAN[>>] Retrying $Label with Windows BITS transfer...$RESET"
+                Start-BitsTransfer -Source $Url -Destination $partialPath -DisplayName $Label -Priority Foreground -ErrorAction Stop
+                Move-Item -LiteralPath $partialPath -Destination $TargetPath -Force
+                return $true
+            } catch {
+                Write-Host "$ORANGE    BITS transfer also failed: $($_.Exception.Message)$RESET"
+            }
+        }
+        Write-Host "$ORANGE    Partial data was kept and will resume on the next setup run.$RESET"
         Write-Host "$RED[!] Download failed: $($_.Exception.Message)$RESET"
         return $false
+    } finally {
+        if ($fileStream) { $fileStream.Dispose() }
+        if ($responseStream) { $responseStream.Dispose() }
+        if ($response) { $response.Dispose() }
+        if ($httpClient) { $httpClient.Dispose() }
     }
 }
 
@@ -138,8 +201,28 @@ function Install-FluxSchnell {
     $hfAccessToken = if ($env:HF_TOKEN) { $env:HF_TOKEN } else { $env:HUGGING_FACE_HUB_TOKEN }
     if (-not (Test-Path (Join-Path $modelDir 'ae.safetensors')) -and -not $hfAccessToken) {
         Write-Host "$ORANGE[!] FLUX.1 Schnell requires access to its gated VAE on Hugging Face.$RESET"
-        Write-Host "$WHITE    Accept the model terms, then set HF_TOKEN and rerun setup.$RESET"
-        return
+        Write-Host "$WHITE    Accept the terms in your browser, then provide a Hugging Face read token below.$RESET"
+        Write-Host "$CYAN    Terms: https://huggingface.co/black-forest-labs/FLUX.1-schnell$RESET"
+        $openTerms = Read-Host "$ORANGE[?] Open the FLUX.1 Schnell terms page now? [Y/n]$RESET"
+        if ($openTerms -notmatch '^[Nn]$') {
+            Start-Process 'https://huggingface.co/black-forest-labs/FLUX.1-schnell'
+        }
+        $tokenSecret = Read-Host "$ORANGE[?] Hugging Face read token (input hidden, leave blank to skip)$RESET" -AsSecureString
+        $tokenPointer = [IntPtr]::Zero
+        try {
+            $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecret)
+            $hfAccessToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
+        } finally {
+            if ($tokenPointer -ne [IntPtr]::Zero) {
+                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
+            }
+        }
+        if ($hfAccessToken) {
+            $env:HF_TOKEN = $hfAccessToken
+        } else {
+            Write-Host "$RED[!] A Hugging Face token is required to download the gated FLUX VAE.$RESET"
+            return
+        }
     }
 
     $sdBinary = Get-ChildItem -Path (Join-Path $USB_ROOT 'bin\win-x64\image') -Filter 'sd-cli.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
