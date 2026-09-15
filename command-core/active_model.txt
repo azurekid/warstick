@@ -1,1 +1,1 @@
-qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+Spark-X2.5-4B-Q4_K_M.gguf
