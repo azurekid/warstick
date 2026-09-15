@@ -708,7 +708,6 @@ stop_image_server() {
 # Ensure Linux shared objects are real files (FAT/exFAT USB copies drop symlinks).
 ensure_linux_runtime_libs() {
     local BIN_DIR="$1"
-    local candidate
 
     [ -d "$BIN_DIR" ] || return 1
 
@@ -719,27 +718,31 @@ ensure_linux_runtime_libs() {
     fi
 
     # Materialize SONAME aliases as hard copies so noexec/FAT USB media still works.
-    local source_library
-    local alias_library
-    local library_aliases=(
-        "libggml-base.so.0.23.0:libggml-base.so.0"
-        "libggml.so.0.23.0:libggml.so.0"
-        "libllama-common.so.0.4.0:libllama-common.so.0"
-        "libllama.so.0.4.0:libllama.so.0"
-        "libmtmd.so.0.4.0:libmtmd.so.0"
-        "libllama-server-impl.so.0:libllama-server-impl.so"
+    # The exact patch version (e.g. libllama.so.0.0.9668) varies between llama.cpp
+    # releases, so discover the shipped versioned file instead of hardcoding it.
+    local soname_base
+    local versioned_file
+    local soname_bases=(
+        "libggml-base.so.0"
+        "libggml.so.0"
+        "libllama-common.so.0"
+        "libllama.so.0"
+        "libmtmd.so.0"
     )
 
-    for candidate in "${library_aliases[@]}"; do
-        IFS=':' read -r source_library alias_library _ <<< "$candidate"
-        if [ -f "$BIN_DIR/$source_library" ] && { [ ! -f "$BIN_DIR/$alias_library" ] || [ -L "$BIN_DIR/$alias_library" ]; }; then
-            cp -f "$BIN_DIR/$source_library" "$BIN_DIR/$alias_library" 2>/dev/null || true
+    for soname_base in "${soname_bases[@]}"; do
+        if [ -f "$BIN_DIR/$soname_base" ] && [ ! -L "$BIN_DIR/$soname_base" ]; then
+            continue
         fi
-
-        if [ -n "$_" ] && [ -f "$BIN_DIR/$source_library" ] && { [ ! -f "$BIN_DIR/$_" ] || [ -L "$BIN_DIR/$_" ]; }; then
-            cp -f "$BIN_DIR/$source_library" "$BIN_DIR/$_" 2>/dev/null || true
+        versioned_file=$(find "$BIN_DIR" -maxdepth 1 -type f -name "${soname_base}.*" -print -quit 2>/dev/null)
+        if [ -n "$versioned_file" ]; then
+            cp -f "$versioned_file" "$BIN_DIR/$soname_base" 2>/dev/null || true
         fi
     done
+
+    if [ -f "$BIN_DIR/libllama-server-impl.so.0" ] && { [ ! -f "$BIN_DIR/libllama-server-impl.so" ] || [ -L "$BIN_DIR/libllama-server-impl.so" ]; }; then
+        cp -f "$BIN_DIR/libllama-server-impl.so.0" "$BIN_DIR/libllama-server-impl.so" 2>/dev/null || true
+    fi
 
     # Best-effort execute bits (ignored on some FAT mounts).
     chmod +x "$BIN_DIR/llama-server" "$BIN_DIR"/*.so* 2>/dev/null || true
