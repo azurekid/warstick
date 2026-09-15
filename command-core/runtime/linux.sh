@@ -187,12 +187,14 @@ EOF
         3)
             draw_banner
             echo -e "${CYAN}Tip: You can call skills directly like: ${WHITE}/geo_ip_lookup 8.8.8.8${CYAN} or ${WHITE}/url_intelligence https://site.com${RESET}"
-            echo -ne "${ORANGE}Enter Custom Attack Parameters: ${RESET}"
-            read CUSTOM_TASK
+            echo -e "${CYAN}Enter another prompt after each result. Submit a blank prompt or ${WHITE}/back${CYAN} to return.${RESET}"
+            while true; do
+                echo -ne "${ORANGE}Enter Custom Attack Parameters: ${RESET}"
+                read -r CUSTOM_TASK
 
-            if [ -z "$CUSTOM_TASK" ]; then
-                continue
-            fi
+                if [ -z "$CUSTOM_TASK" ] || [ "$CUSTOM_TASK" = "/back" ]; then
+                    break
+                fi
 
             draw_banner
             mkdir -p "$USB_ROOT/warstick-logs"
@@ -281,8 +283,7 @@ EOF
             echo -e "\n${GREEN}[✓] Execution complete.${RESET}"
             echo -e "${CYAN}[*] Log saved to: ${WHITE}warstick-logs/custom_${TIMESTAMP}.txt${RESET}"
             echo -e "\n${PINK}───────────────────────────────────────────────────────${RESET}"
-            echo -n "Press [Enter] to clear viewport matrix..."
-            read
+            done
             ;;
         4)
             execute_custom_skill_menu

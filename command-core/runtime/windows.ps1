@@ -192,12 +192,14 @@ while ($true) {
         "3" {
             Draw-Banner
             Write-Host "${CYAN}Tip: You can call skills directly like: $WHITE/geo_ip_lookup 8.8.8.8$CYAN or $WHITE/url_intelligence https://site.com$RESET"
-            Write-Host -NoNewline "$ORANGEEnter Custom Attack Parameters: $RESET"
-            $customTask = Read-Host
+            Write-Host "${CYAN}Enter another prompt after each result. Submit a blank prompt or $WHITE/back$CYAN to return.$RESET"
+            while ($true) {
+                Write-Host -NoNewline "$ORANGEEnter Custom Attack Parameters: $RESET"
+                $customTask = Read-Host
 
-            if ([string]::IsNullOrWhiteSpace($customTask)) {
-                continue
-            }
+                if ([string]::IsNullOrWhiteSpace($customTask) -or $customTask -eq '/back') {
+                    break
+                }
 
             Draw-Banner
             $logsDir = Join-Path $USB_ROOT "warstick-logs"
@@ -282,7 +284,7 @@ while ($true) {
             Write-Host "`n$GREEN[✓] Execution complete.$RESET"
             Write-Host "$CYAN[*] Log saved to: ${WHITE}warstick-logs\custom_${timestamp}.txt$RESET"
             Write-Host "`n$PINK───────────────────────────────────────────────────────$RESET"
-            Read-Host "Press [Enter] to clear viewport matrix..."
+            }
         }
         "4" {
             Execute-CustomSkillMenu
