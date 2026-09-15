@@ -132,20 +132,24 @@ function Initialize-WarStickSetup {
     Draw-Banner
     Write-Host "$PINK─── [WARSTICK SETUP] ────────────$RESET`n"
 
+    $requiredRelease = 'b10964'
+
     $backendVariant = Get-RecommendedBackendVariant
     $destDir = Join-Path $USB_ROOT "bin\win-x64"
     $installedVariant = Get-InstalledBackendVariant $destDir
+    $releaseMarker = Join-Path $destDir '.backend-release'
+    $installedRelease = if (Test-Path $releaseMarker) { (Get-Content $releaseMarker -Raw).Trim() } else { '' }
     Write-Host "$CYAN[*] Selected $WHITE$backendVariant$CYAN backend for detected hardware.$RESET"
 
     $serverExe = Get-EngineBinary
-    if (-not $serverExe -or -not (Test-Path $serverExe) -or $installedVariant -ne $backendVariant) {
+    if (-not $serverExe -or -not (Test-Path $serverExe) -or $installedVariant -ne $backendVariant -or $installedRelease -ne $requiredRelease) {
         Write-Host "$CYAN[*] Preparing $backendVariant llama.cpp backend...$RESET"
         if ($installedVariant -ne 'unknown' -and $installedVariant -ne $backendVariant) {
             Write-Host "$ORANGE[*] Replacing $installedVariant backend with $backendVariant.$RESET"
         }
 
         Write-Host "$CYAN[*] Downloading self-contained Uncensored Studio llama.cpp release...$RESET"
-        $release = "b9668"
+        $release = $requiredRelease
         New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 
         $assetName = switch ($backendVariant) {
@@ -175,6 +179,7 @@ function Initialize-WarStickSetup {
 
             if ((Test-Path (Join-Path $destDir 'llama-server.exe')) -and (Test-Path (Join-Path $destDir 'ggml.dll'))) {
                 $backendVariant | Out-File -FilePath (Join-Path $destDir '.backend-variant') -Encoding ascii
+                $release | Out-File -FilePath $releaseMarker -Encoding ascii
             } else {
                 Write-Host "$RED[!] Backend archive did not contain a complete llama-server installation.$RESET"
             }

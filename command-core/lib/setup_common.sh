@@ -206,6 +206,8 @@ initialize_warstick_setup() {
     draw_banner
     echo -e "${PINK}─── [WARSTICK SETUP ] ────────────${RESET}\n"
 
+    local REQUIRED_RELEASE="b10964"
+
     local OS_TYPE="mac"
     if [[ "$(uname -s)" == "Linux" ]]; then
         OS_TYPE="linux"
@@ -214,6 +216,7 @@ initialize_warstick_setup() {
     local BACKEND_VARIANT
     local DEST_DIR
     local INSTALLED_VARIANT
+    local INSTALLED_RELEASE
     local SERVER_BIN
     BACKEND_VARIANT=$(detect_backend_variant "$OS_TYPE")
     DEST_DIR="$USB_ROOT/bin/linux-x64"
@@ -223,17 +226,18 @@ initialize_warstick_setup() {
         DEST_DIR="$USB_ROOT/bin/mac-$MAC_ARCH"
     fi
     INSTALLED_VARIANT=$(get_installed_backend_variant "$DEST_DIR")
+    INSTALLED_RELEASE=$(tr -d '\r\n' < "$DEST_DIR/.backend-release" 2>/dev/null)
     echo -e "${CYAN}[*] Selected ${WHITE}${BACKEND_VARIANT}${CYAN} backend for detected hardware.${RESET}"
 
     SERVER_BIN=$(get_engine_binary "$OS_TYPE")
-    if [ -z "$SERVER_BIN" ] || [ ! -f "$SERVER_BIN" ] || [ "$INSTALLED_VARIANT" != "$BACKEND_VARIANT" ]; then
+    if [ -z "$SERVER_BIN" ] || [ ! -f "$SERVER_BIN" ] || [ "$INSTALLED_VARIANT" != "$BACKEND_VARIANT" ] || [ "$INSTALLED_RELEASE" != "$REQUIRED_RELEASE" ]; then
         echo -e "${CYAN}[*] Preparing ${BACKEND_VARIANT} llama.cpp backend...${RESET}"
         if [ "$INSTALLED_VARIANT" != "unknown" ] && [ "$INSTALLED_VARIANT" != "$BACKEND_VARIANT" ]; then
             echo -e "${ORANGE}[*] Replacing ${INSTALLED_VARIANT} backend with ${BACKEND_VARIANT}.${RESET}"
         fi
 
         echo -e "${CYAN}[*] Downloading self-contained Uncensored Studio llama.cpp release...${RESET}"
-        local RELEASE="b9668"
+        local RELEASE="$REQUIRED_RELEASE"
         mkdir -p "$DEST_DIR"
 
         local ASSET_NAME="llama-$RELEASE-bin-ubuntu-x64.tar.gz"
@@ -253,6 +257,7 @@ initialize_warstick_setup() {
             chmod +x "$DEST_DIR"/llama-* 2>/dev/null || true
             if [ -f "$DEST_DIR/llama-server" ]; then
                 printf '%s\n' "$BACKEND_VARIANT" > "$DEST_DIR/.backend-variant"
+                printf '%s\n' "$RELEASE" > "$DEST_DIR/.backend-release"
             else
                 echo -e "${RED}[!] Backend archive did not contain llama-server.${RESET}"
             fi

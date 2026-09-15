@@ -470,7 +470,8 @@ function Start-Engine {
 
     if ($serverExe -and (Test-Path $serverExe)) {
         $serverBinDir = Split-Path -Parent $serverExe
-        Start-Process -FilePath $serverExe -WorkingDirectory $serverBinDir -ArgumentList "-m `"$modelFile`" -c 4096 --host 0.0.0.0 --port $targetPort --path `"$webUiPath`"" -WindowStyle Hidden
+        $modelsDir = Join-Path $USB_ROOT "models"
+        Start-Process -FilePath $serverExe -WorkingDirectory $serverBinDir -ArgumentList "--models-dir `"$modelsDir`" --models-max 1 --models-autoload -c 4096 --host 0.0.0.0 --port $targetPort --path `"$webUiPath`"" -WindowStyle Hidden
         Wait-ForServer -Port $targetPort -MaxWait 35
     } else {
         Write-Host "$RED[!] Error: llama-server.exe binary not found. Run setup-windows.ps1.$RESET"

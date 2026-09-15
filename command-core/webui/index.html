@@ -392,6 +392,9 @@
           <button id="image-mode" type="button" aria-pressed="false">Image</button>
         </div>
         <div id="chat-options">
+          <label>MODEL
+            <select id="chat-model" aria-label="Chat model"></select>
+          </label>
           <label class="mode-control" title="Toggle War Mode. Prompt commands: /war and /normal">
             <input id="war-mode" type="checkbox">
             <span>WAR MODE</span>
@@ -432,6 +435,7 @@
     const chatModeButton = document.querySelector("#chat-mode");
     const imageModeButton = document.querySelector("#image-mode");
     const chatOptions = document.querySelector("#chat-options");
+    const chatModel = document.querySelector("#chat-model");
     const imageOptions = document.querySelector("#image-options");
     const imageModel = document.querySelector("#image-model");
     const imageSize = document.querySelector("#image-size");
@@ -559,10 +563,18 @@
 
     async function discoverModel() {
       try {
-        const response = await fetch("/v1/models");
+        const response = await fetch("/v1/models", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
-        modelName.dataset.chatModel = payload.data?.[0]?.id || "LOCAL MODEL";
+        const selectedModel = chatModel.value || modelName.dataset.chatModel;
+        chatModel.replaceChildren(...(payload.data || []).map(model => {
+          const option = document.createElement("option");
+          option.value = model.id;
+          option.textContent = model.id;
+          option.selected = model.id === selectedModel;
+          return option;
+        }));
+        modelName.dataset.chatModel = chatModel.value || payload.data?.[0]?.id || "LOCAL MODEL";
         modelName.textContent = generationMode === "image" ? "Z-IMAGE TURBO" : modelName.dataset.chatModel;
         setStatus("ONLINE", "online");
       } catch {
@@ -656,7 +668,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
-          body: JSON.stringify({ messages, stream: true, temperature: 0.7 })
+          body: JSON.stringify({ model: chatModel.value, messages, stream: true, temperature: 0.7 })
         });
         if (!response.ok || !response.body) throw new Error(`Request failed: HTTP ${response.status}`);
 
@@ -724,6 +736,10 @@
     stop.addEventListener("click", () => controller?.abort());
     chatModeButton.addEventListener("click", () => setGenerationMode("chat"));
     imageModeButton.addEventListener("click", () => setGenerationMode("image"));
+    chatModel.addEventListener("change", () => {
+      modelName.dataset.chatModel = chatModel.value;
+      modelName.textContent = chatModel.value;
+    });
     imageModel.addEventListener("change", () => { modelName.textContent = imageModel.value; });
     warModeToggle.addEventListener("change", () => {
       setWarMode(warModeToggle.checked);
