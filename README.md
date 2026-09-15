@@ -1,22 +1,152 @@
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/0bebecf3-b4c6-4320-9e61-eeb84d824494" />
+# WarStick
 
-# warstick
-pendrive hosted AI WarStick
+Portable, local-first AI tooling designed to run from a removable drive on macOS, Linux, and Windows. WarStick combines a terminal command console, a browser interface, local GGUF inference, optional image generation, and extensible tactical modules without sending prompts to a hosted model API.
 
-During setup, WarStick detects the available GPU and installs the matching llama.cpp backend. It uses Metal on macOS, CUDA or Vulkan on Windows when supported, Vulkan on Linux when a working GPU driver is available, and otherwise falls back to CPU.
+<p align="center">
+	<img width="1024" height="559" alt="WarStick command console" src="https://github.com/user-attachments/assets/0bebecf3-b4c6-4320-9e61-eeb84d824494" />
+</p>
 
-Web chat history is stored in `command-core/chat_history.json` on the WarStick drive, so the same conversation is restored across macOS, Linux, and Windows. The local history service uses the system Perl runtime on macOS/Linux and PowerShell on Windows; no Python runtime or additional package is required.
+> [!IMPORTANT]
+> WarStick can generate and execute system commands. Use it only on systems and networks you own or are explicitly authorized to test, and review commands before execution.
 
-The web console supports War Mode through its toggle or the `/war` and `/normal` prompt commands. War Mode keeps responses concise and focused on defensive security actions, risks, and next steps. The runtime model registry can download the curated starter model or any direct HTTPS `.gguf` URL, then activate it immediately.
+## Features
+
+- **Runs locally** with `llama.cpp` and GGUF models.
+- **Portable across operating systems** with launchers for macOS, Linux, and Windows.
+- **Hardware-aware setup** selects Metal, CUDA, Vulkan, or CPU inference.
+- **Web command console** with streaming responses, stop controls, persistent history, and responsive layout.
+- **Live model switching** discovers local models and loads the selected model on demand.
+- **Model registry** downloads the starter model or a GGUF file from a direct HTTPS URL.
+- **War Mode** provides concise defensive-security guidance through a toggle, `/war`, or `/normal`.
+- **Optional image generation** uses Z-Image Turbo and `stable-diffusion.cpp` entirely on-device.
+- **Tactical modules** add reusable shell, PowerShell, or Python-based lookups and workflows.
+- **Portable logs and output** remain on the WarStick drive.
+
+## Screenshots
+
+| Web command console | Terminal console |
+| --- | --- |
+| _Screenshot placeholder: `docs/screenshots/web-console.png`_ | _Screenshot placeholder: `docs/screenshots/terminal-console.png`_ |
+
+| Image generation |
+| --- |
+| _Screenshot placeholder: `docs/screenshots/image-generation.png`_ |
+
+Replace a placeholder with an image after adding the corresponding file:
+
+```html
+<img alt="WarStick Web command console" src="docs/screenshots/web-console.png">
+```
+
+## Quick Start
+
+Clone or copy the repository to the drive from which you want to run WarStick. Run setup once for each target platform, then use its launcher.
+
+### macOS
+
+```bash
+./setup-mac.command
+./run-mac.command
+```
+
+### Linux
+
+```bash
+chmod +x setup-linux.sh run-linux.sh
+./setup-linux.sh
+./run-linux.sh
+```
+
+### Windows
+
+From PowerShell:
+
+```powershell
+.\setup-windows.ps1
+.\run-windows.ps1
+```
+
+Alternatively, double-click `run-windows.bat` after setup.
+
+Setup downloads a compatible inference backend and, when no GGUF model is present, the Qwen2.5 Coder 0.5B starter model. Internet access is required during setup and for modules that query external services; local chat works offline afterward.
+
+## Command Console
+
+The terminal interface provides prepared host-recon and audit prompts, custom objectives, tactical modules, model management, the Web UI launcher, and local audit logs.
+
+Choose **Open Interactive Web UI Dashboard** from the menu, or open [http://127.0.0.1:9931](http://127.0.0.1:9931) while WarStick is running.
+
+## Models
+
+Place compatible `.gguf` files directly in `models/`. The Web UI discovers them automatically and switches models on demand while limiting the router to one loaded text model at a time.
+
+The terminal model registry can also:
+
+1. Download the curated Qwen2.5 Coder starter model.
+2. Download a model from a direct HTTPS `.gguf` URL.
+3. Select and activate any discovered model.
+
+Model compatibility depends on the bundled `llama.cpp` release. Rerun the platform setup script after updating WarStick to install the required backend version.
 
 ## Image Generation
 
-Setup can optionally install Z-Image Turbo and the native `stable-diffusion.cpp` engine. The bundle is about 6 GB and uses Metal on Apple Silicon, CUDA or Vulkan on supported Linux and Windows GPUs, and CPU otherwise. Python is not required. Prebuilt image generation is not offered on Intel macOS.
+Image generation is optional. During setup, accept the Z-Image Turbo installation prompt to download approximately 6 GB of model and engine files.
 
-Run the platform setup script and accept the Z-Image prompt. The model bundle is stored in `models/image/z-image-turbo`, and the platform engine is stored below `bin/<platform>/image`. At runtime, the local image service listens on port `9933`; switch the Web UI from Chat to Image to select a size, enable CPU offload when GPU memory is limited, and render an image. PNG files persist in `generated-images` on the WarStick drive.
+The Web UI then provides:
 
-Z-Image Turbo setup is optional. If the bundle is absent or the image service cannot start, text chat on port `9931` and portable history on port `9932` continue to work normally.
+- Chat and Image generation modes.
+- Multiple output sizes.
+- CPU offload for systems with limited GPU memory.
+- Persistent PNG output in `generated-images/`.
+
+The native backend uses Metal on Apple Silicon, CUDA or Vulkan where supported, and CPU as a fallback. Prebuilt image generation is not available on Intel macOS. Text chat remains available when the image bundle is not installed.
 
 ## Tactical Modules
 
-User-maintained extensions live in [tactics/README.md](tactics/README.md).
+Modules live in `tactics/` and appear under menu option 4. They can also be invoked directly from a custom prompt:
+
+```text
+/geo_ip_lookup 8.8.8.8
+/dns_over_https example.com
+/url_intelligence https://example.com
+```
+
+See [tactics/README.md](tactics/README.md) for the module format, metadata headers, and examples.
+
+## Local Services
+
+| Port | Service | Purpose |
+| ---: | --- | --- |
+| `9931` | `llama-server` | Web UI and OpenAI-compatible text inference API |
+| `9932` | History service | Portable Web chat history |
+| `9933` | Image service | Model discovery, image generation, and generated PNG files |
+
+The text server listens on `0.0.0.0` by default so other devices may be able to reach port `9931`. Keep WarStick on a trusted network and do not expose these ports to the internet.
+
+## Project Layout
+
+```text
+command-core/     Runtime scripts, shared libraries, Web UI, and state
+models/           Local GGUF text models and optional image model bundles
+bin/              Platform-specific native inference binaries
+tactics/          User-maintained tactical modules
+generated-images/ Persistent image output
+warstick-logs/    Runtime and audit logs
+```
+
+## Requirements
+
+- A 64-bit supported operating system: macOS, Linux, or Windows.
+- Enough free storage for the selected models and native backend.
+- `curl` and `tar` on macOS/Linux for setup.
+- Perl on macOS/Linux for portable Web history and the image service.
+- Windows PowerShell on Windows.
+- A compatible GPU is optional; CPU inference is supported.
+
+## Privacy
+
+Prompts, chat history, models, generated images, and logs are stored locally. Tactical modules may contact the external services named in their implementations, so review a module before running it when network privacy matters.
+
+## License
+
+WarStick is available under the [MIT License](LICENSE).
