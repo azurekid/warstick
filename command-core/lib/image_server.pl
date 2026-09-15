@@ -83,8 +83,8 @@ sub generate_image {
     die "prompt must be a non-empty string\n"
         unless defined($prompt) && !ref($prompt) && $prompt =~ /\S/ && length(encode('UTF-8', $prompt)) <= 8 * 1024;
 
-    my $width = bounded_integer($payload->{width}, 1024, 256, 2048, 'width');
-    my $height = bounded_integer($payload->{height}, 1024, 256, 2048, 'height');
+    my $width = bounded_integer($payload->{width}, 1024, 256, 4096, 'width');
+    my $height = bounded_integer($payload->{height}, 1024, 256, 4096, 'height');
     my $model = $payload->{model} // $default_model;
     die "unknown image model\n" unless !ref($model) && exists $models{$model};
     my $steps = bounded_integer($payload->{steps}, $models{$model}{steps}, 1, 50, 'steps');

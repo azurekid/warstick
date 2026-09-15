@@ -93,8 +93,8 @@ function Invoke-ImageGeneration($Payload) {
         throw 'Prompt must be a non-empty string no larger than 8 KB.'
     }
 
-    $width = Get-BoundedInteger $Payload.width 1024 256 2048 'width'
-    $height = Get-BoundedInteger $Payload.height 1024 256 2048 'height'
+    $width = Get-BoundedInteger $Payload.width 1024 256 4096 'width'
+    $height = Get-BoundedInteger $Payload.height 1024 256 4096 'height'
     $model = if ([string]::IsNullOrWhiteSpace($Payload.model)) { $defaultModel } else { [string]$Payload.model }
     if (-not $models.ContainsKey($model)) { throw 'Unknown image model.' }
     $steps = Get-BoundedInteger $Payload.steps $models[$model].Steps 1 50 'steps'
