@@ -33,25 +33,6 @@ function Update-ImageModels {
         }
     }
 
-    $fluxDirectory = Join-Path $ModelsDirectory 'flux1-schnell'
-    $fluxVae = Join-Path $fluxDirectory 'ae.safetensors'
-    $fluxClip = Join-Path $fluxDirectory 'clip_l.safetensors'
-    $fluxT5 = Join-Path $fluxDirectory 't5xxl_fp16.safetensors'
-    if ((Test-Path $fluxVae) -and (Test-Path $fluxClip) -and (Test-Path $fluxT5)) {
-        Get-ChildItem -LiteralPath $fluxDirectory -Filter 'flux1-schnell-*.gguf' -File -ErrorAction SilentlyContinue | ForEach-Object {
-            $script:models["flux1-schnell/$($_.Name)"] = @{
-                Label = "FLUX.1 Schnell / $($_.Name)"
-                Arguments = @(
-                    '--diffusion-model', $_.FullName, '--vae', $fluxVae,
-                    '--clip_l', $fluxClip, '--t5xxl', $fluxT5,
-                    '--sampling-method', 'euler', '--clip-on-cpu',
-                    '--params-backend', 'te=disk', '--guidance', '0'
-                )
-                Steps = 4
-            }
-        }
-    }
-
     if ($script:models.Count -eq 0) { throw "No complete image model bundles found below $ModelsDirectory" }
     $script:defaultModel = @($script:models.Keys | Sort-Object { if ($_ -like 'z-image-turbo/*') { 0 } else { 1 } }, { $_ })[0]
 }
@@ -140,9 +121,6 @@ function Invoke-ImageGeneration($Payload) {
 
     $log = (& $SdBinary @arguments 2>&1 | Out-String)
     $exitCode = $LASTEXITCODE
-    if ($log -match 't5xxl (?:text encoder not found|from .* failed)') {
-        throw 'Image generation failed: FLUX text encoder could not be loaded.'
-    }
     if ($exitCode -ne 0 -or -not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
         if ($log.Length -gt 2000) { $log = $log.Substring($log.Length - 2000) }
         throw "Image generation failed (exit $exitCode): $log"

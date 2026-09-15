@@ -202,55 +202,6 @@ install_z_image_turbo() {
     echo -e "${GREEN}[✓] Z-Image Turbo is ready. Generated images will be stored on this drive.${RESET}"
 }
 
-install_flux_schnell() {
-    local OS_TYPE="$1"
-    local ANSWER
-    echo -e "\n${PINK}─── [OPTIONAL FLUX.1 SCHNELL // IMAGE GENERATION] ─────────────────${RESET}"
-    echo -e "${CYAN}    Requires about 16 GB of downloads and 17 GB of free storage.${RESET}"
-    echo -ne "${ORANGE}[?] Install the FLUX.1 Schnell Q3_K_M model bundle? [y/N]: ${RESET}"
-    read -r ANSWER
-    [[ "$ANSWER" =~ ^[Yy]$ ]] || return 0
-
-    local MODEL_DIR="$USB_ROOT/models/image/flux1-schnell"
-    if [ ! -f "$MODEL_DIR/ae.safetensors" ] && [ -z "${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}" ]; then
-        echo -e "${ORANGE}[!] FLUX.1 Schnell requires access to its gated VAE on Hugging Face.${RESET}"
-        echo -e "${WHITE}    Accept the terms at:${RESET} ${CYAN}https://huggingface.co/black-forest-labs/FLUX.1-schnell${RESET}"
-        echo -e "${WHITE}    Create a read token at:${RESET} ${CYAN}https://huggingface.co/settings/tokens${RESET}"
-        if [ -t 0 ]; then
-            echo -ne "${ORANGE}[?] Hugging Face token (input hidden): ${RESET}"
-            IFS= read -r -s HF_TOKEN
-            echo
-            export HF_TOKEN
-        fi
-        if [ -z "${HF_TOKEN:-}" ]; then
-            echo -e "${RED}[!] A Hugging Face token is required to install FLUX.1 Schnell.${RESET}"
-            return 1
-        fi
-    fi
-
-    local BIN_ROOT="$USB_ROOT/bin/linux-x64/image"
-    [ "$OS_TYPE" == "mac" ] && BIN_ROOT="$USB_ROOT/bin/mac-arm64/image"
-    if ! find "$BIN_ROOT" -type f -name 'sd-cli' -print -quit 2>/dev/null | grep -q .; then
-        echo -e "${ORANGE}[!] Install the native image engine from the Z-Image prompt first.${RESET}"
-        return 1
-    fi
-
-    download_setup_file \
-        "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors" \
-        "$MODEL_DIR/ae.safetensors" "FLUX.1 VAE" || return 1
-    download_setup_file \
-        "https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/flux1-schnell-Q3_K_M.gguf" \
-        "$MODEL_DIR/flux1-schnell-Q3_K_M.gguf" "FLUX.1 Schnell Q3_K_M diffusion model" || return 1
-    download_setup_file \
-        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors" \
-        "$MODEL_DIR/clip_l.safetensors" "FLUX CLIP-L text encoder" || return 1
-    download_setup_file \
-        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors" \
-        "$MODEL_DIR/t5xxl_fp16.safetensors" "FLUX T5-XXL FP16 text encoder" || return 1
-
-    echo -e "${GREEN}[✓] FLUX.1 Schnell is ready and will appear in the Image model selector.${RESET}"
-}
-
 initialize_warstick_setup() {
     draw_banner
     echo -e "${PINK}─── [WARSTICK SETUP ] ────────────${RESET}\n"
@@ -337,11 +288,6 @@ initialize_warstick_setup() {
         echo -e "${ORANGE}[!] Z-Image Turbo setup did not complete; continuing to other image models.${RESET}"
         IMAGE_SETUP_FAILED=1
     fi
-    if ! install_flux_schnell "$OS_TYPE"; then
-        echo -e "${ORANGE}[!] FLUX.1 Schnell setup did not complete.${RESET}"
-        IMAGE_SETUP_FAILED=1
-    fi
-
     if [ "$IMAGE_SETUP_FAILED" -eq 0 ]; then
         echo -e "\n${GREEN}[✓] WarStick Neural Setup Complete!${RESET}"
     else

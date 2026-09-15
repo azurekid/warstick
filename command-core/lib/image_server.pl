@@ -40,27 +40,6 @@ sub discover_models {
         }
     }
 
-    my $flux_directory = "$models_directory/flux1-schnell";
-    my $flux_vae = "$flux_directory/ae.safetensors";
-    my $flux_clip = "$flux_directory/clip_l.safetensors";
-    my $flux_t5 = "$flux_directory/t5xxl_fp16.safetensors";
-    if (-f $flux_vae && -f $flux_clip && -f $flux_t5) {
-        for my $diffusion_model (glob("$flux_directory/flux1-schnell-*.gguf")) {
-            my $name = basename($diffusion_model);
-            $models{"flux1-schnell/$name"} = {
-                label => "FLUX.1 Schnell / $name",
-                arguments => [
-                    '--diffusion-model', $diffusion_model, '--vae', $flux_vae,
-                    '--clip_l', $flux_clip, '--t5xxl', $flux_t5,
-                    '--sampling-method', 'euler', '--clip-on-cpu',
-                    '--params-backend', 'te=disk',
-                    '--guidance', '0',
-                ],
-                steps => 4,
-            };
-        }
-    }
-
     die "no complete image model bundles found below $models_directory\n" unless keys %models;
     ($default_model) = sort { ($a !~ /^z-image-turbo\//) <=> ($b !~ /^z-image-turbo\//) || $a cmp $b } keys %models;
 }
@@ -145,8 +124,6 @@ sub generate_image {
     close $reader;
     waitpid $process_id, 0;
     my $exit_code = $? & 127 ? 128 + ($? & 127) : $? >> 8;
-    die "image generation failed: FLUX text encoder could not be loaded\n"
-        if $log =~ /t5xxl (?:text encoder not found|from .* failed)/i;
     die "image generation failed (exit $exit_code): " . substr($log, -2000) . "\n"
         if $exit_code != 0 || !-f $output_path;
 
