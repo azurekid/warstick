@@ -275,7 +275,7 @@ initialize_warstick_setup() {
         echo -e "\n${PINK}[*] No GGUF models discovered.${RESET}"
         echo -e "${CYAN}[>>] Downloading starter Dolphin 2.6 Mistral 7B...${RESET}"
         mkdir -p "$USB_ROOT/models"
-        local MODEL_URL="https://huggingface.co/itlwas/dolphin-2.6-mistral-7b-Q4_K_M-GGUF/resolve/main/dolphin-2.6-mistral-7b-q4_k_m.gguf?download=trueQwen3.5-0.8B-UD-IQ2_XXS"
+        local MODEL_URL="https://huggingface.co/itlwas/dolphin-2.6-mistral-7b-Q4_K_M-GGUF/resolve/main/dolphin-2.6-mistral-7b-q4_k_m.gguf"
         local TARGET_PATH="$USB_ROOT/models/dolphin-2.6-mistral-7b-q4_k_m.gguf"
         if curl -fSL --progress-bar "$MODEL_URL" -o "$TARGET_PATH"; then
             echo -e "${GREEN}[✓] Starter model downloaded successfully!${RESET}"
