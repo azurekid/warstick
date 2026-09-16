@@ -213,17 +213,16 @@ while ($true) {
             $sessionHeader | Out-File -FilePath $sessionLog -Encoding UTF8
             "`r`n$sessionHeader" | Out-File -FilePath $masterLog -Append -Encoding UTF8
 
-            # Check if user referenced a skill directly
+            # Skills are invoked only through an explicit /<name> prefix.
             $directSkillCmd = Try-DirectSkillExecution -userInput $customTask
 
             if ($directSkillCmd) {
                 $execCommand = $directSkillCmd
                 Write-Host "$PINK[!] Direct Skill Trigger Detected: $WHITE$execCommand$RESET"
             } else {
-                $skillsManifest = Get-SkillsManifest
                 $payload = @{
                     messages = @(
-                        @{ role = "system"; content = "You are a terminal command utility mapping engine for Windows. Output ONLY the single exact executable PowerShell or Windows cmd command string to resolve the prompt target parameter. WarStick local ports are: main LLM and Web UI 9931, history 9932, image generation 9933. For the local WarStick service or local AI engine, use http://127.0.0.1:9931 unless the user explicitly supplies another port; never invent port 8080. Available tactical modules: $skillsManifest. You may invoke a tactical module via `& `"$USB_ROOT\tactics\<script>`" -Target `<arg>` if matching. Do NOT assume Python is installed. Use native PowerShell (Invoke-RestMethod, ConvertFrom-Json, Select-Object) or CMD utilities. Do not think, explain, or discuss. No markdown, raw command line only." },
+                        @{ role = "system"; content = "You are a terminal command utility mapping engine for Windows. Output ONLY the single exact executable PowerShell or Windows cmd command string to resolve the prompt target parameter. WarStick local ports are: main LLM and Web UI 9931, history 9932, image generation 9933. For the local WarStick service or local AI engine, use http://127.0.0.1:9931 unless the user explicitly supplies another port; never invent port 8080. Never invoke scripts from the tactics directory; tactical modules are handled separately only for explicit slash commands. Do NOT assume Python is installed. Use native PowerShell (Invoke-RestMethod, ConvertFrom-Json, Select-Object) or CMD utilities. Do not think, explain, or discuss. No markdown, raw command line only." },
                         @{ role = "user"; content = $customTask }
                     )
                     temperature = 0.1

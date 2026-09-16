@@ -207,7 +207,7 @@ EOF
             echo -e "$SESSION_HEADER" > "$SESSION_LOG"
             echo -e "\n$SESSION_HEADER" >> "$MASTER_LOG"
 
-            # Check if user referenced a skill directly (e.g. /geo_ip_lookup 8.8.8.8 or @url_intelligence)
+            # Skills are invoked only through an explicit /<name> prefix.
             DIRECT_SKILL_CMD=$(try_direct_skill_execution "$CUSTOM_TASK")
 
             if [ -n "$DIRECT_SKILL_CMD" ]; then

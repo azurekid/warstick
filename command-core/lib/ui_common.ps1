@@ -504,8 +504,12 @@ function Get-SkillsManifest {
 }
 
 function Try-DirectSkillExecution($userInput) {
+    if ($userInput -notmatch '^/') {
+        return $null
+    }
+
     $skillsDir = Join-Path $USB_ROOT "tactics"
-    $cleanInput = $userInput -replace '^[/@]', '' -replace '^(?i)(skill:|run:|use skill:?)\s*', ''
+    $cleanInput = $userInput -replace '^/', ''
     $parts = $cleanInput.Split(' ', 2)
     $firstWord = $parts[0].Trim()
     $restArgs = if ($parts.Count -gt 1) { $parts[1].Trim() } else { "" }
@@ -713,6 +717,18 @@ if (`$Target) {
 }
 
 function Query-LlmWithAnimation($Payload) {
+    try {
+        $payloadObject = $Payload | ConvertFrom-Json -ErrorAction Stop
+        if (-not $payloadObject.PSObject.Properties['model']) {
+            $activeModel = Get-ActiveModel
+            if (-not [string]::IsNullOrWhiteSpace($activeModel)) {
+                $modelId = [System.IO.Path]::GetFileNameWithoutExtension($activeModel)
+                $payloadObject | Add-Member -NotePropertyName model -NotePropertyValue $modelId
+                $Payload = $payloadObject | ConvertTo-Json -Depth 10 -Compress
+            }
+        }
+    } catch { }
+
     $phrases = Get-Phrases
     $glyphs = @("◢", "◣", "◤", "◥", "█", "▓", "▒", "░", "◆", "◇", "◈", "▲", "▼")
     $colors = @($PINK, $ORANGE, $CYAN, $PURPLE)

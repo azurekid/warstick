@@ -291,14 +291,15 @@ get_skills_manifest() {
     echo "$MANIFEST"
 }
 
-# Direct skill invocation from prompt (e.g. /geo_ip_lookup 8.8.8.8, @url_intelligence https://... or skill:name)
+# Direct skill invocation from prompt (e.g. /geo_ip_lookup 8.8.8.8)
 try_direct_skill_execution() {
     local USER_INPUT="$1"
     local SKILLS_DIR="$USB_ROOT/tactics"
 
-    # Normalize trigger prefixes like /, @, skill:, run:
+    [[ "$USER_INPUT" == /* ]] || return 1
+
     local CLEAN_INPUT
-    CLEAN_INPUT=$(echo "$USER_INPUT" | sed -E 's/^[\/@]|^skill:[ ]*|^run:[ ]*|^use skill:[ ]*|^use skill[ ]+//i')
+    CLEAN_INPUT=${USER_INPUT#/}
     
     local FIRST_WORD
     FIRST_WORD=$(echo "$CLEAN_INPUT" | awk '{print $1}')
@@ -834,6 +835,18 @@ restart_engine() {
 # REAL-TIME ASYNC SPINNER & REQUEST RUNNER
 query_llm_with_live_animation() {
     local PAYLOAD="$1"
+    local ACTIVE_MODEL
+    local MODEL_ID
+
+    if ! printf '%s' "$PAYLOAD" | grep -qE '"model"[[:space:]]*:'; then
+        ACTIVE_MODEL=$(get_active_model)
+        MODEL_ID=$(basename "$ACTIVE_MODEL")
+        MODEL_ID=${MODEL_ID%.[gG][gG][uU][fF]}
+        if [ -n "$MODEL_ID" ]; then
+            PAYLOAD="${PAYLOAD%\}},\"model\":\"$(json_escape "$MODEL_ID")\"}"
+        fi
+    fi
+
     mkdir -p "$USB_ROOT/warstick-logs"
     local RESP_FILE="$USB_ROOT/command-core/last_response.json"
     rm -f "$RESP_FILE"
@@ -917,7 +930,13 @@ extract_chat_response() {
     local content=""
 
     if command -v jq >/dev/null 2>&1; then
-        content=$(printf '%s' "$raw_response" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
+        content=$(printf '%s' "$raw_response" | jq -r '.choices[0].message.content // .choices[0].message.reasoning_content // empty' 2>/dev/null)
+    elif command -v perl >/dev/null 2>&1; then
+        content=$(printf '%s' "$raw_response" | perl -MJSON::PP -0777 -e '
+            my $data = eval { decode_json(<STDIN>) } or exit;
+            my $message = $data->{choices}[0]{message} || {};
+            print $message->{content} // $message->{reasoning_content} // "";
+        ' 2>/dev/null)
     fi
 
     if [ -z "$content" ]; then
@@ -950,16 +969,10 @@ clean_json_command() {
     local content=""
     local final_cmd=""
 
-    # 1. Extract JSON content field (try multiple patterns for robustness)
-    # Handle both escaped and unescaped quotes
-    content=$(echo "$raw_input" | sed -n 's/.*"content":"//p' | sed 's/"}.*//' | head -1)
-    
-    # If that didn't work, try extracting reasoning_content
-    if [ -z "$content" ]; then
-        content=$(echo "$raw_input" | sed -n 's/.*"reasoning_content":"//p' | sed 's/"}.*//' | head -1)
-    fi
-    
-    # If still empty, try extracting from whole response
+    # 1. Decode the response before inspecting command text so escaped quotes
+    # inside shell arguments cannot be mistaken for JSON delimiters.
+    content=$(extract_chat_response "$raw_input")
+
     if [ -z "$content" ]; then
         content="$raw_input"
     fi

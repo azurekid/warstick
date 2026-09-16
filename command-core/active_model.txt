@@ -1,1 +1,1 @@
-Spark-X2.5-4B-Q4_K_M.gguf
+dolphin-2.6-mistral-7b-q4_k_m.gguf

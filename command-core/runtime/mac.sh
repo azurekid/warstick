@@ -200,16 +200,15 @@ EOF
             echo -e "$SESSION_HEADER" > "$SESSION_LOG"
             echo -e "\n$SESSION_HEADER" >> "$MASTER_LOG"
 
-            # Check if user referenced a skill directly (e.g. /geo_ip_lookup 8.8.8.8 or @url_intelligence)
+            # Skills are invoked only through an explicit /<name> prefix.
             DIRECT_SKILL_CMD=$(try_direct_skill_execution "$CUSTOM_TASK")
 
             if [ -n "$DIRECT_SKILL_CMD" ]; then
                 EXEC_COMMAND="$DIRECT_SKILL_CMD"
                 echo -e "${PINK}[!] Direct Skill Trigger Detected: ${WHITE}$EXEC_COMMAND${RESET}"
             else
-                SKILLS_MANIFEST=$(get_skills_manifest)
                 PAYLOAD=$(cat <<EOF
-{"messages": [{"role": "system", "content": "You are a terminal command utility mapping engine for macOS (Darwin). Output ONLY the single exact executable macOS/BSD terminal command string to resolve the prompt target parameter. WarStick local ports are: main LLM and Web UI 9931, history 9932, image generation 9933. For the local WarStick service or local AI engine, use http://127.0.0.1:9931 unless the user explicitly supplies another port; never invent port 8080. Available tactical modules: $SKILLS_MANIFEST. You may invoke a tactical module via \"$USB_ROOT/tactics/<script> <arg>\" if matching. Do NOT use Python (do not use python, python3, or pipe to python -m json.tool). Use native CLI tools like curl, grep, awk, sed, cut, tr, scutil, networksetup, ifconfig, netstat, lsof. Do not think, explain, or discuss. No markdown or shell prompt prefix; output the raw command line only."}, {"role": "user", "content": "$CUSTOM_TASK"}], "temperature": 0.1, "max_tokens": 96}
+{"messages": [{"role": "system", "content": "You are a terminal command utility mapping engine for macOS (Darwin). Output ONLY the single exact executable macOS/BSD terminal command string to resolve the prompt target parameter. WarStick local ports are: main LLM and Web UI 9931, history 9932, image generation 9933. For the local WarStick service or local AI engine, use http://127.0.0.1:9931 unless the user explicitly supplies another port; never invent port 8080. Never invoke scripts from the tactics directory; tactical modules are handled separately only for explicit slash commands. Do NOT use Python (do not use python, python3, or pipe to python -m json.tool). Use native CLI tools like curl, grep, awk, sed, cut, tr, scutil, networksetup, ifconfig, netstat, lsof. Do not think, explain, or discuss. No markdown or shell prompt prefix; output the raw command line only."}, {"role": "user", "content": "$CUSTOM_TASK"}], "temperature": 0.1, "max_tokens": 96}
 EOF
 )
                 query_llm_with_live_animation "$PAYLOAD"
