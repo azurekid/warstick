@@ -24,19 +24,13 @@ Portable, local-first AI tooling designed to run from a removable drive on macOS
 
 ## Screenshots
 
-| Web command console | Terminal console |
-| --- | --- |
-| _Screenshot placeholder: `docs/screenshots/web-console.png`_ | _Screenshot placeholder: `docs/screenshots/terminal-console.png`_ |
+### LLM interacting with local system
 
-| Image generation |
-| --- |
-| _Screenshot placeholder: `docs/screenshots/image-generation.png`_ |
+<img width="800" height="672" alt="ScreenRecording2026-09-16at1 49 24PM-ezgif com-gif-maker" src="https://github.com/user-attachments/assets/d106c5b0-dcfd-4f80-8caf-3a9080d9f2e3" />
 
-Replace a placeholder with an image after adding the corresponding file:
+### Web UI
 
-```html
-<img alt="WarStick Web command console" src="docs/screenshots/web-console.png">
-```
+<img width="800" height="459" alt="ScreenRecording2026-09-16at1 15 22PM-ezgif com-gif-maker-2" src="https://github.com/user-attachments/assets/d9ed467e-f551-47f1-ae56-422dc70af672" />
 
 ## Quick Start
 
@@ -91,6 +85,9 @@ Model compatibility depends on the bundled `llama.cpp` release. Rerun the platfo
 ## Image Generation
 
 Image generation is optional. During setup, accept the Z-Image Turbo installation prompt to download approximately 6 GB of model and engine files.
+
+<img width="1025" height="894" alt="image" src="https://github.com/user-attachments/assets/1b1d1a44-5558-4dea-989a-ad3722972ef2" />
+
 
 The Web UI then provides:
 
