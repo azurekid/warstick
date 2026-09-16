@@ -195,7 +195,7 @@ function Initialize-WarStickSetup {
 
     $discoveredModels = Get-DiscoveredModelFiles
     if ($discoveredModels.Count -eq 0) {
-        Write-Host "`n$PINK[*] No GGUF models discovered in USB or Uncensored AI Studio paths.$RESET"
+        Write-Host "`n$PINK[*] No GGUF models discovered in USB.$RESET"
         Write-Host "$CYAN[>>] Downloading starter Qwen2.5-Coder model (491 MB)...$RESET"
         $modelsDir = Join-Path $USB_ROOT "models"
         New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
