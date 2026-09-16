@@ -196,11 +196,11 @@ function Initialize-WarStickSetup {
     $discoveredModels = Get-DiscoveredModelFiles
     if ($discoveredModels.Count -eq 0) {
         Write-Host "`n$PINK[*] No GGUF models discovered in USB.$RESET"
-        Write-Host "$CYAN[>>] Downloading starter Qwen2.5-Coder model (491 MB)...$RESET"
+        Write-Host "$CYAN[>>] Downloading starter Dolphin 2.6 Mistral 7B...$RESET"
         $modelsDir = Join-Path $USB_ROOT "models"
         New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
-        $modelUrl = "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
-        $targetPath = Join-Path $modelsDir "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+        $modelUrl = "https://huggingface.co/itlwas/dolphin-2.6-mistral-7b-Q4_K_M-GGUF/resolve/main/dolphin-2.6-mistral-7b-q4_k_m.gguf"
+        $targetPath = Join-Path $modelsDir "dolphin-2.6-mistral-7b-q4_k_m.gguf"
         try {
             Invoke-WebRequest -Uri $modelUrl -OutFile $targetPath -UseBasicParsing
             Write-Host "$GREEN[✓] Starter model downloaded successfully!$RESET"
