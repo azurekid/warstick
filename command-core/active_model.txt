@@ -1,1 +1,1 @@
-dolphin-2.6-mistral-7b-q4_k_m.gguf
+Lily-Cybersecurity-7B-v0.2.Q4_K_M.gguf

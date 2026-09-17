@@ -16,6 +16,61 @@ export RED="\033[38;5;196m"      # Bright Red
 export BOLD="\033[1m"
 export RESET="\033[0m"
 
+get_install_tank() {
+    printf '%s\n' \
+        '          ______                    ' \
+        '  _______/______\________           ' \
+        ' /                    __ \____======' \
+        '|  (o) (o) (o) (o) (o)  | \        ' \
+        ' \______________________/           '
+}
+
+draw_install_tank_frame() {
+    local OFFSET="$1"
+    local TERM_COLS="$2"
+    local STATUS_TEXT="${3:-}"
+    local LINE
+
+    while IFS= read -r LINE; do
+        tput el
+        printf '%*s%s' "$OFFSET" '' "${LINE:0:$((TERM_COLS - OFFSET))}"
+        tput cud1
+        tput cr
+    done < <(get_install_tank)
+    if [ -n "$STATUS_TEXT" ]; then
+        tput el
+        printf '%s' "${STATUS_TEXT:0:$TERM_COLS}"
+        tput cud1
+        tput cr
+    fi
+}
+
+play_install_tank_animation() {
+    [ -t 1 ] || return 0
+    command -v tput >/dev/null 2>&1 || return 0
+
+    local TERM_COLS
+    local TANK_WIDTH=40
+    local MAX_OFFSET
+    local OFFSET
+
+    TERM_COLS=$(tput cols 2>/dev/null) || TERM_COLS=80
+    [[ "$TERM_COLS" =~ ^[0-9]+$ ]] || TERM_COLS=80
+    MAX_OFFSET=$((TERM_COLS > TANK_WIDTH ? TERM_COLS - TANK_WIDTH : 0))
+
+    tput civis 2>/dev/null || true
+    trap 'tput cnorm 2>/dev/null || true' EXIT
+    trap 'exit 130' INT TERM
+    clear
+    for ((OFFSET = 0; OFFSET <= MAX_OFFSET; OFFSET++)); do
+        tput cup 0 0
+        draw_install_tank_frame "$OFFSET" "$TERM_COLS"
+        sleep 0.04
+    done
+    tput cnorm 2>/dev/null || true
+    trap - EXIT INT TERM
+}
+
 #  BANNER RENDERER 
 draw_banner() {
     clear

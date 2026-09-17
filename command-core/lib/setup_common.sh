@@ -1,6 +1,65 @@
 #!/bin/bash
 
 # Setup-only backend detection and installation helpers.
+download_with_tank() {
+    if [ ! -t 1 ] || ! command -v tput >/dev/null 2>&1; then
+        curl "$@"
+        return $?
+    fi
+
+    local TERM_COLS
+    local TANK_WIDTH=40
+    local MAX_OFFSET
+    local OFFSET=0
+    local DIRECTION=1
+    local DOWNLOAD_PID
+    local DOWNLOAD_STATUS
+    local ERROR_FILE
+    local PERCENTAGE="0%"
+
+    TERM_COLS=$(tput cols 2>/dev/null) || TERM_COLS=80
+    [[ "$TERM_COLS" =~ ^[0-9]+$ ]] || TERM_COLS=80
+    MAX_OFFSET=$((TERM_COLS > TANK_WIDTH ? TERM_COLS - TANK_WIDTH : 0))
+    ERROR_FILE=$(mktemp "${TMPDIR:-/tmp}/warstick-download.XXXXXX") || return 1
+
+    curl --progress-bar --show-error "$@" 2>"$ERROR_FILE" &
+    DOWNLOAD_PID=$!
+    printf '\n\n\n\n\n\n'
+    tput cuu 6
+    tput sc
+    tput civis 2>/dev/null || true
+    trap 'kill "$DOWNLOAD_PID" 2>/dev/null || true; tput cnorm 2>/dev/null || true; rm -f "$ERROR_FILE"; exit 130' INT TERM
+
+    while kill -0 "$DOWNLOAD_PID" 2>/dev/null; do
+        PERCENTAGE=$(grep -Eo '[0-9]+([.][0-9]+)?%' "$ERROR_FILE" 2>/dev/null | tail -n 1)
+        [ -n "$PERCENTAGE" ] || PERCENTAGE="0%"
+        tput rc
+        draw_install_tank_frame "$OFFSET" "$TERM_COLS" "Downloading: $PERCENTAGE"
+        if ((MAX_OFFSET > 0)); then
+            OFFSET=$((OFFSET + DIRECTION))
+            if ((OFFSET >= MAX_OFFSET || OFFSET <= 0)); then
+                DIRECTION=$((DIRECTION * -1))
+            fi
+        fi
+        sleep 0.04
+    done
+
+    wait "$DOWNLOAD_PID"
+    DOWNLOAD_STATUS=$?
+    tput rc
+    [ "$DOWNLOAD_STATUS" -eq 0 ] && draw_install_tank_frame "$OFFSET" "$TERM_COLS" "Downloading: 100%"
+    tput rc
+    tput cud 6
+    tput cr
+    tput cnorm 2>/dev/null || true
+    trap - INT TERM
+    if [ "$DOWNLOAD_STATUS" -ne 0 ]; then
+        cat "$ERROR_FILE" >&2
+    fi
+    rm -f "$ERROR_FILE"
+    return "$DOWNLOAD_STATUS"
+}
+
 detect_backend_variant() {
     local OS_TYPE="$1"
 
@@ -60,7 +119,7 @@ download_setup_file() {
     if [ -s "$TARGET_PATH.part" ]; then
         echo -e "${CYAN}[>>] Resuming $LABEL from $(du -h "$TARGET_PATH.part" | cut -f1).${RESET}"
     fi
-    if curl -fL --progress-bar "${CURL_TRANSPORT_ARGS[@]}" "${CURL_HEADERS[@]}" "$URL" -o "$TARGET_PATH.part"; then
+    if download_with_tank -fL "${CURL_TRANSPORT_ARGS[@]}" "${CURL_HEADERS[@]}" "$URL" -o "$TARGET_PATH.part"; then
         mv -f "$TARGET_PATH.part" "$TARGET_PATH"
         return 0
     fi
@@ -203,6 +262,7 @@ install_z_image_turbo() {
 }
 
 initialize_warstick_setup() {
+    play_install_tank_animation
     draw_banner
     echo -e "${PINK}─── [WARSTICK SETUP ] ────────────${RESET}\n"
 
@@ -250,7 +310,7 @@ initialize_warstick_setup() {
         local ARCHIVE_PATH="$USB_ROOT/bin/backend.tar.gz"
 
         echo -e "${CYAN}[>>] Downloading $ASSET_NAME...${RESET}"
-        if curl -fSL --progress-bar "$ARCHIVE_URL" -o "$ARCHIVE_PATH"; then
+        if download_with_tank -fSL "$ARCHIVE_URL" -o "$ARCHIVE_PATH"; then
             rm -f "$DEST_DIR"/libggml-vulkan*.so* "$DEST_DIR"/libggml-cuda*.so* "$DEST_DIR"/libggml-hip*.so* 2>/dev/null || true
             tar -xzf "$ARCHIVE_PATH" -C "$DEST_DIR" --strip-components=1 2>/dev/null || tar -xzf "$ARCHIVE_PATH" -C "$DEST_DIR" 2>/dev/null || true
             rm -f "$ARCHIVE_PATH"
@@ -277,7 +337,7 @@ initialize_warstick_setup() {
         mkdir -p "$USB_ROOT/models"
         local MODEL_URL="https://huggingface.co/itlwas/dolphin-2.6-mistral-7b-Q4_K_M-GGUF/resolve/main/dolphin-2.6-mistral-7b-q4_k_m.gguf"
         local TARGET_PATH="$USB_ROOT/models/dolphin-2.6-mistral-7b-q4_k_m.gguf"
-        if curl -fSL --progress-bar "$MODEL_URL" -o "$TARGET_PATH"; then
+        if download_with_tank -fSL "$MODEL_URL" -o "$TARGET_PATH"; then
             echo -e "${GREEN}[✓] Starter model downloaded successfully!${RESET}"
         else
             echo -e "${RED}[!] Model download failed.${RESET}"

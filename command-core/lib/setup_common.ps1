@@ -35,6 +35,55 @@ function Get-InstalledBackendVariant($Directory) {
     return 'cpu'
 }
 
+function Invoke-WarStickDownload([string]$Url, [string]$TargetPath, [hashtable]$Headers = @{}) {
+    if ([Console]::IsOutputRedirected) {
+        Invoke-WebRequest -Uri $Url -OutFile $TargetPath -Headers $Headers -UseBasicParsing
+        return
+    }
+
+    $contentLength = 0L
+    try {
+        $head = Invoke-WebRequest -Uri $Url -Method Head -Headers $Headers -UseBasicParsing
+        [long]::TryParse([string]$head.Headers['Content-Length'], [ref]$contentLength) | Out-Null
+    } catch { }
+
+    $job = Start-Job -ScriptBlock {
+        param($DownloadUrl, $DownloadPath, $DownloadHeaders)
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $DownloadPath -Headers $DownloadHeaders -UseBasicParsing
+    } -ArgumentList $Url, $TargetPath, $Headers
+
+    $top = [Console]::CursorTop
+    1..6 | ForEach-Object { Write-Host '' }
+    $offset = 0
+    $direction = 1
+    $maxOffset = [Math]::Max(0, ([Console]::WindowWidth - 1) - 40)
+    try {
+        [Console]::CursorVisible = $false
+        while ($job.State -in @('NotStarted', 'Running')) {
+            $downloaded = if (Test-Path -LiteralPath $TargetPath) { (Get-Item -LiteralPath $TargetPath).Length } else { 0L }
+            $percentage = if ($contentLength -gt 0) {
+                [Math]::Min(100, [Math]::Floor(($downloaded * 100) / $contentLength))
+            } else {
+                '--'
+            }
+            Write-WarStickTankFrame -Offset $offset -Top $top -StatusText "Downloading: $percentage%"
+            if ($maxOffset -gt 0) {
+                $offset += $direction
+                if ($offset -ge $maxOffset -or $offset -le 0) { $direction *= -1 }
+            }
+            Start-Sleep -Milliseconds 40
+        }
+        Receive-Job -Job $job -Wait -ErrorAction Stop | Out-Null
+        Write-WarStickTankFrame -Offset $offset -Top $top -StatusText 'Downloading: 100%'
+    } finally {
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        try {
+            [Console]::SetCursorPosition(0, $top + 6)
+            [Console]::CursorVisible = $true
+        } catch { }
+    }
+}
+
 function Save-SetupDownload([string]$Url, [string]$TargetPath, [string]$Label) {
     if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
         Write-Host "$GREEN[✓] $Label already exists.$RESET"
@@ -51,7 +100,7 @@ function Save-SetupDownload([string]$Url, [string]$TargetPath, [string]$Label) {
         if ($Url.StartsWith('https://huggingface.co/') -and $hfAccessToken) {
             $headers.Authorization = "Bearer $hfAccessToken"
         }
-        Invoke-WebRequest -Uri $Url -OutFile $partialPath -Headers $headers -UseBasicParsing
+        Invoke-WarStickDownload -Url $Url -TargetPath $partialPath -Headers $headers
         Move-Item -LiteralPath $partialPath -Destination $TargetPath -Force
         return $true
     } catch {
@@ -129,6 +178,7 @@ function Install-ZImageTurbo([string]$BackendVariant) {
 }
 
 function Initialize-WarStickSetup {
+    Show-WarStickTankAnimation
     Draw-Banner
     Write-Host "$PINK─── [WARSTICK SETUP] ────────────$RESET`n"
 
@@ -163,12 +213,12 @@ function Initialize-WarStickSetup {
 
         Write-Host "$CYAN[>>] Downloading $assetName...$RESET"
         try {
-            Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
+            Invoke-WarStickDownload -Url $archiveUrl -TargetPath $archivePath
             if ($backendVariant -eq 'cuda') {
                 $cudaAssetName = "cudart-llama-bin-win-cuda-12.4-x64.zip"
                 $cudaArchiveUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$release/$cudaAssetName"
                 Write-Host "$CYAN[>>] Downloading $cudaAssetName...$RESET"
-                Invoke-WebRequest -Uri $cudaArchiveUrl -OutFile $cudaArchivePath -UseBasicParsing
+                Invoke-WarStickDownload -Url $cudaArchiveUrl -TargetPath $cudaArchivePath
             }
 
             Get-ChildItem -Path (Join-Path $destDir '*') -Include 'ggml-cuda*.dll','ggml-vulkan*.dll','ggml-hip*.dll','ggml-sycl*.dll','cudart64_*.dll','cublas*.dll' -File -ErrorAction SilentlyContinue | Remove-Item -Force
@@ -202,7 +252,7 @@ function Initialize-WarStickSetup {
         $modelUrl = "https://huggingface.co/itlwas/dolphin-2.6-mistral-7b-Q4_K_M-GGUF/resolve/main/dolphin-2.6-mistral-7b-q4_k_m.gguf"
         $targetPath = Join-Path $modelsDir "dolphin-2.6-mistral-7b-q4_k_m.gguf"
         try {
-            Invoke-WebRequest -Uri $modelUrl -OutFile $targetPath -UseBasicParsing
+            Invoke-WarStickDownload -Url $modelUrl -TargetPath $targetPath
             Write-Host "$GREEN[✓] Starter model downloaded successfully!$RESET"
         } catch {
             Write-Host "$RED[!] Model download failed: $($_.Exception.Message)$RESET"

@@ -14,6 +14,49 @@ $RED    = "$([char]27)[38;5;196m"
 $BOLD   = "$([char]27)[1m"
 $RESET  = "$([char]27)[0m"
 
+function Get-WarStickTankLines {
+    return @(
+        '          ______                    ',
+        '  _______/______\________           ',
+        ' /                    __ \____======',
+        '|  (o) (o) (o) (o) (o)  | \        ',
+        ' \______________________/           '
+    )
+}
+
+function Write-WarStickTankFrame([int]$Offset, [int]$Top, [string]$StatusText = '') {
+    $width = [Math]::Max(1, [Console]::WindowWidth - 1)
+    $lines = @(Get-WarStickTankLines)
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        [Console]::SetCursorPosition(0, $Top + $index)
+        $text = (' ' * $Offset) + $lines[$index]
+        if ($text.Length -gt $width) { $text = $text.Substring(0, $width) }
+        Write-Host -NoNewline $text.PadRight($width)
+    }
+    if ($StatusText) {
+        [Console]::SetCursorPosition(0, $Top + $lines.Count)
+        if ($StatusText.Length -gt $width) { $StatusText = $StatusText.Substring(0, $width) }
+        Write-Host -NoNewline $StatusText.PadRight($width)
+    }
+}
+
+function Show-WarStickTankAnimation {
+    if ([Console]::IsOutputRedirected) { return }
+    try {
+        $width = [Math]::Max(1, [Console]::WindowWidth - 1)
+        $maxOffset = [Math]::Max(0, $width - 40)
+        Clear-Host
+        [Console]::CursorVisible = $false
+        for ($offset = 0; $offset -le $maxOffset; $offset++) {
+            Write-WarStickTankFrame -Offset $offset -Top 0
+            Start-Sleep -Milliseconds 40
+        }
+        [Console]::SetCursorPosition(0, 5)
+    } finally {
+        try { [Console]::CursorVisible = $true } catch { }
+    }
+}
+
 function Draw-Banner {
     Clear-Host
     $bannerFile = Join-Path $USB_ROOT "command-core\banner.txt"
