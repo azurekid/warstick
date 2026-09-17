@@ -29,7 +29,8 @@ while true; do
     echo -e "  [5] Select / Download LLM Model"
     echo -e "  [6] Open Interactive Web UI Dashboard"
     echo -e "  [7] View Local Red-Team Audit Logs"
-    echo -e "  [8] Terminate WarStick Runtime & Purge Memory"
+    echo -e "  [8] Adjust LLM Response Temperature"
+    echo -e "  [9] Terminate WarStick Runtime & Purge Memory"
     echo ""
     echo -ne "${PINK}warstick@command-console:~# ${RESET}"
     read CHOICE
@@ -292,6 +293,9 @@ EOF
             read
             ;;
         8)
+            set_temperature_menu
+            ;;
+        9)
             clear
             echo -e "${PINK}[!] PURGING WARSTICK SYSTEM INFRASTRUCTURE..."
             stop_history_server

@@ -215,6 +215,41 @@ function Get-ActiveModel {
     return $selectedModel
 }
 
+# ACTIVE TEMPERATURE MANAGEMENT
+function Get-ActiveTemperature {
+    $tempConf = Join-Path $USB_ROOT "command-core\active_temperature.txt"
+    $default = "0.2"
+    if (Test-Path $tempConf) {
+        $value = (Get-Content $tempConf -ErrorAction SilentlyContinue | Out-String).Trim()
+        $parsed = 0.0
+        if ([double]::TryParse($value, [ref]$parsed) -and $parsed -ge 0 -and $parsed -le 2) {
+            return $parsed.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+        }
+    }
+    return $default
+}
+
+function Set-TemperatureMenu {
+    Draw-Banner
+    Write-Host "$CYAN─── [LLM RESPONSE TEMPERATURE] ─────────────────────────$RESET`n"
+    $current = Get-ActiveTemperature
+    Write-Host "${WHITE}Current temperature: $current$RESET"
+    Write-Host "${CYAN}Lower values (e.g. 0.1-0.3) produce precise, deterministic answers.$RESET"
+    Write-Host "${CYAN}Higher values (e.g. 0.8-1.2) produce more creative, varied answers.$RESET"
+    $newTemp = Read-Host "${ORANGE}Enter new temperature (0.0 - 2.0), or press Enter to keep current$RESET"
+    if ([string]::IsNullOrWhiteSpace($newTemp)) { return }
+    $parsed = 0.0
+    if (-not [double]::TryParse($newTemp, [ref]$parsed) -or $parsed -lt 0 -or $parsed -gt 2) {
+        Write-Host "$RED[!] Invalid value. Must be a number between 0.0 and 2.0.$RESET"
+        Start-Sleep -Seconds 1.5
+        return
+    }
+    $tempConf = Join-Path $USB_ROOT "command-core\active_temperature.txt"
+    $parsed.ToString([System.Globalization.CultureInfo]::InvariantCulture) | Out-File -FilePath $tempConf -Encoding UTF8
+    Write-Host "$GREEN[✓] Temperature set to $parsed$RESET"
+    Start-Sleep -Seconds 1
+}
+
 function Download-ModelMenu {
     Draw-Banner
     Write-Host "$CYAN─── [MODEL DOWNLOAD CENTER] ────────────────────────────$RESET`n"
@@ -767,9 +802,15 @@ function Query-LlmWithAnimation($Payload) {
             if (-not [string]::IsNullOrWhiteSpace($activeModel)) {
                 $modelId = [System.IO.Path]::GetFileNameWithoutExtension($activeModel)
                 $payloadObject | Add-Member -NotePropertyName model -NotePropertyValue $modelId
-                $Payload = $payloadObject | ConvertTo-Json -Depth 10 -Compress
             }
         }
+        $activeTemperature = [double](Get-ActiveTemperature)
+        if ($payloadObject.PSObject.Properties['temperature']) {
+            $payloadObject.temperature = $activeTemperature
+        } else {
+            $payloadObject | Add-Member -NotePropertyName temperature -NotePropertyValue $activeTemperature
+        }
+        $Payload = $payloadObject | ConvertTo-Json -Depth 10 -Compress
     } catch { }
 
     $phrases = Get-Phrases

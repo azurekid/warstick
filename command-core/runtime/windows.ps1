@@ -25,7 +25,8 @@ while ($true) {
     Write-Host "  [5] Select / Download LLM Model"
     Write-Host "  [6] Open Interactive Web UI Dashboard"
     Write-Host "  [7] View Local Red-Team Audit Logs"
-    Write-Host "  [8] Terminate WarStick Runtime & Purge Memory"
+    Write-Host "  [8] Adjust LLM Response Temperature"
+    Write-Host "  [9] Terminate WarStick Runtime & Purge Memory"
     Write-Host ""
     Write-Host -NoNewline "$PINKwarstick@command-console:~# $RESET"
     $choice = Read-Host
@@ -319,6 +320,9 @@ while ($true) {
             Read-Host "Press [Enter] to slice back to matrix..."
         }
         "8" {
+            Set-TemperatureMenu
+        }
+        "9" {
             Clear-Host
             Write-Host "$PINK[!] PURGING WARSTICK SYSTEM INFRASTRUCTURE...$RESET"
             Stop-HistoryServer

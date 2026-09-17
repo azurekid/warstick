@@ -215,6 +215,44 @@ get_active_model() {
     echo "$SELECTED_MODEL"
 }
 
+# ACTIVE TEMPERATURE MANAGEMENT
+get_active_temperature() {
+    local TEMP_CONF="$USB_ROOT/command-core/active_temperature.txt"
+    local DEFAULT_TEMP="0.2"
+    local VALUE
+    if [ -f "$TEMP_CONF" ]; then
+        VALUE=$(tr -d '\r\n' < "$TEMP_CONF" 2>/dev/null)
+        if [[ "$VALUE" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk -v v="$VALUE" 'BEGIN{exit !(v>=0 && v<=2)}'; then
+            echo "$VALUE"
+            return 0
+        fi
+    fi
+    echo "$DEFAULT_TEMP"
+}
+
+set_temperature_menu() {
+    draw_banner
+    echo -e "${CYAN}─── [LLM RESPONSE TEMPERATURE] ─────────────────────────${RESET}\n"
+    local CURRENT
+    CURRENT=$(get_active_temperature)
+    echo -e "${WHITE}Current temperature: $CURRENT${RESET}"
+    echo -e "${CYAN}Lower values (e.g. 0.1-0.3) produce precise, deterministic answers.${RESET}"
+    echo -e "${CYAN}Higher values (e.g. 0.8-1.2) produce more creative, varied answers.${RESET}"
+    echo -ne "${ORANGE}Enter new temperature (0.0 - 2.0), or press Enter to keep current: ${RESET}"
+    read -r NEW_TEMP
+    if [ -z "$NEW_TEMP" ]; then
+        return 0
+    fi
+    if ! [[ "$NEW_TEMP" =~ ^[0-9]+(\.[0-9]+)?$ ]] || ! awk -v v="$NEW_TEMP" 'BEGIN{exit !(v>=0 && v<=2)}'; then
+        echo -e "${RED}[!] Invalid value. Must be a number between 0.0 and 2.0.${RESET}"
+        sleep 1.5
+        return 1
+    fi
+    echo "$NEW_TEMP" > "$USB_ROOT/command-core/active_temperature.txt"
+    echo -e "${GREEN}[✓] Temperature set to $NEW_TEMP${RESET}"
+    sleep 1
+}
+
 download_model_menu() {
     draw_banner
     echo -e "${CYAN}─── [MODEL DOWNLOAD CENTER] ────────────────────────────${RESET}\n"
@@ -900,6 +938,14 @@ query_llm_with_live_animation() {
         if [ -n "$MODEL_ID" ]; then
             PAYLOAD="${PAYLOAD%\}},\"model\":\"$(json_escape "$MODEL_ID")\"}"
         fi
+    fi
+
+    local ACTIVE_TEMPERATURE
+    ACTIVE_TEMPERATURE=$(get_active_temperature)
+    if printf '%s' "$PAYLOAD" | grep -qE '"temperature"[[:space:]]*:[[:space:]]*[0-9]+(\.[0-9]+)?'; then
+        PAYLOAD=$(printf '%s' "$PAYLOAD" | sed -E "s/\"temperature\"[[:space:]]*:[[:space:]]*[0-9]+(\.[0-9]+)?/\"temperature\":$ACTIVE_TEMPERATURE/")
+    else
+        PAYLOAD="${PAYLOAD%\}},\"temperature\":$ACTIVE_TEMPERATURE}"
     fi
 
     mkdir -p "$USB_ROOT/warstick-logs"

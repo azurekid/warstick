@@ -36,7 +36,8 @@ while true; do
     echo -e "  [5] Select / Download LLM Model"
     echo -e "  [6] Open Interactive Web UI Dashboard"
     echo -e "  [7] View Local Red-Team Audit Logs"
-    echo -e "  [8] Terminate WarStick Runtime & Purge Memory"
+    echo -e "  [8] Adjust LLM Response Temperature"
+    echo -e "  [9] Terminate WarStick Runtime & Purge Memory"
     echo ""
     echo -ne "${PINK}warstick@command-console:~# ${RESET}"
     read CHOICE
@@ -216,7 +217,7 @@ EOF
             else
                 ESCAPED_CUSTOM_TASK=$(json_escape "$CUSTOM_TASK")
                 PAYLOAD=$(cat <<EOF
-{"messages": [{"role": "system", "content": "You are a helpful assistant. Answer the user directly and concisely. Do not generate or execute shell commands unless the user explicitly asks for one."}, {"role": "user", "content": "$ESCAPED_CUSTOM_TASK"}], "temperature": 0.2, "max_tokens": 64}
+{"messages": [{"role": "system", "content": "You are a helpful assistant. Give only the final answer with no step-by-step explanation, code, or commentary unless the user explicitly asks for it. For requests to decode, encode, hash, convert, or calculate a value, output only the resulting value. Do not generate or execute shell commands unless the user explicitly asks for one."}, {"role": "user", "content": "$ESCAPED_CUSTOM_TASK"}], "temperature": 0.2, "max_tokens": 64}
 EOF
 )
                 query_llm_with_live_animation "$PAYLOAD"
@@ -315,6 +316,9 @@ EOF
             read
             ;;
         8)
+            set_temperature_menu
+            ;;
+        9)
             clear
             echo -e "${PINK}[!] PURGING WARSTICK SYSTEM INFRASTRUCTURE..."
             stop_history_server

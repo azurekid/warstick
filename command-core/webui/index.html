@@ -445,7 +445,7 @@
     const modelName = document.querySelector("#model");
     const portNumber = document.querySelector("#port");
 
-    const standardPrompt = "Always respond in English. Keep code, commands, file paths, and other technical literals unchanged.";
+    const standardPrompt = "Always respond in English. Keep code, commands, file paths, and other technical literals unchanged. Give only the final answer with no step-by-step explanation, code, or commentary unless the user explicitly asks for it. For requests to decode, encode, hash, convert, or calculate a value, output only the resulting value by itself.";
     const warModePrompt = `${standardPrompt} War Mode is active: be concise, mission-focused, and prioritize actionable defensive security guidance, risk assessment, and clear next steps.`;
     const systemMessage = { role: "system", content: standardPrompt };
     const historyUrl = "http://127.0.0.1:9932/history";
@@ -668,7 +668,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
-          body: JSON.stringify({ model: chatModel.value, messages, stream: true, temperature: 0.7 })
+          body: JSON.stringify({ model: chatModel.value, messages, stream: true, temperature: 0.2, top_p: 0.9, max_tokens: 1024 })
         });
         if (!response.ok || !response.body) throw new Error(`Request failed: HTTP ${response.status}`);
 
